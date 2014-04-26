@@ -1,0 +1,24 @@
+{
+  "name": "utopia_online",
+  "version": "0.0.0",
+  "description": "Sandbox MMORPG",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://antonbabkin@bitbucket.org/antonbabkin/utopia_online.git"
+  },
+  "keywords": [
+    "mmorpg",
+    "sandbox"
+  ],
+  "author": "Anton Babkin",
+  "license": "IDK",
+  "dependencies": {
+    "express": "~4.0.0",
+    "socket.io": "~0.9.16"
+  }
+}

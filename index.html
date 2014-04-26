@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+	<head>
+
+		<title>Utopia Online - Sandbox MMORPG</title>
+
+        <!-- Library code -->
+        <!-- Load socket.io client side contents. -->
+		<script src="/socket.io/socket.io.js"></script>
+
+	 	
+        <!-- Game code -->
+        <!-- Load the common game code. -->
+		<script src="game_core.js"></script>
+        <!-- Load the game client code. -->
+		<script src="game_client.js"></script>		
+
+	</head>
+
+	<body>
+        <div id="game_window" style="background-color: #FFA500;">
+            <canvas id="canvas" style="background-color: #afff75; float: left;">Your device does not support canvas.</canvas>
+            <div id="ui_panel" style="background-color: #78d5ff; float: left;"></div>
+        </div>
+	</body>
+</html>
