@@ -13,7 +13,7 @@ var verbose = true;
 // ----
 var express = require('express');
 var http = require('http');
-var gameport = 4000;
+var gameport = +process.env.PORT || 5000;
 var app = express();
 var server = http.createServer(app);
 
