@@ -2,39 +2,46 @@
 // Utopia Online - Sandbox MMORPG
 // IDK Licensed. (I don't know what type of license I need, will decide later)
 
-/*jslint browser: true*/
-/*global gameCoreConstructor*/
+/*jslint browser: true, vars: true*/
+/*global gameCoreConstructor, PIXI*/
 
 
 
-window.onload = function () {
+window.addEventListener('load', function clientLoader() {
     'use strict';
-    
+
+
     // ----------------------
-    // Initialize game and UI
+    // Initialize game, PIXI.js and UI
     // ----------------------
-    
     var game = gameCoreConstructor(false);
-        
+
+    var stage = new PIXI.Stage(0xc8f040);
+    
     var ui = {
         window: document.getElementById('game_window'),
-        canvas: document.getElementById('canvas'),
+        canvasDiv: document.getElementById('canvas_div'),
         panel: document.getElementById('ui_panel')
     };
     
- 
-    ui.window.style.width = (game.world.width + 200) + 'px';
-    ui.window.style.height = game.world.height + 'px';
+    ui.window.style.width = (game.WORLD.WIDTH_P + game.UI_PANEL.WIDTH) + 'px';
+    ui.window.style.height = game.UI_PANEL.HEIGHT + 'px';
     
-    ui.canvas.width = game.world.width;
-    ui.canvas.height = game.world.height;
-    
-    ui.panel.style.width = '200px';
-    ui.panel.style.height = game.world.height + 'px';
+    ui.canvasDiv.style.width = game.WORLD.WIDTH_P + 'px';
+    ui.canvasDiv.style.height = game.WORLD.HEIGHT_P + 'px';
 
-    ui.ctx = ui.canvas.getContext('2d');
+    var renderer = PIXI.autoDetectRenderer(game.WORLD.WIDTH_P, game.WORLD.HEIGHT_P);
+    ui.canvasDiv.appendChild(renderer.view);
     
+    ui.panel.style.width = game.UI_PANEL.WIDTH + 'px';
+    ui.panel.style.height = game.UI_PANEL.HEIGHT + 'px';
+    ui.panel.style.backgroundColor = game.COLORS.UI_PANEL;
     
+    var uiPlayers = document.createElement('p');
+    ui.panel.appendChild(uiPlayers);
+    
+    var uiDebug = document.createElement('p');
+    ui.panel.appendChild(uiDebug);
     
     // -------------------------
     // Listen to server events
@@ -59,8 +66,7 @@ window.onload = function () {
     
         
     function onPlayersOnline(data) {
-        console.log('Players online: ' + data);
-        ui.panel.innerHTML = 'Players online: ' + data;
+        uiPlayers.innerHTML = 'Players online: ' + data;
     }
     
     socket.on('players online', onPlayersOnline);
@@ -75,55 +81,142 @@ window.onload = function () {
     
     
     
-    // -------------------------
-    // Client main update loop
-    // -------------------------
-    function update() {
-        
-        render();
-        
-        setTimeout(update, 100);
+    // Check ping every 5 seconds
+    var pingTime, latency;
+    
+    function ping() {
+        pingTime = timestamp();
+        socket.emit('ping');
+        setTimeout(ping, 5000);
     }
+    
+    function onPong() {
+        latency = timestamp() - pingTime;
+    }
+    
+    socket.on('pong', onPong);
+    
+    ping();
+        
+    
+    
+    
+    // -------------------------
+    // Client main animation loop
+    // -------------------------
+    var lastAnimTime, fps;
+    
+    
+    function animate() {
+        var newTime, deltaTime;
+        
+        
+        requestAnimationFrame(animate); 
+        
+        drawChars();
+        
+        renderer.render(stage);
+        
+        
+        // Measure FPS
+        if (!lastAnimTime) {
+            lastAnimTime = timestamp();
+            fps = 0;
+        } else {
+            newTime = timestamp();
+            deltaTime = newTime - lastAnimTime;
+            lastAnimTime = timestamp();
+            fps = 1000 / deltaTime;
+        }
+
+    }
+    
+    
+    // Update latency and FPS every second
+    function debugUpdate() {
+        uiDebug.innerHTML = 'FPS: ' + Math.round(fps) + ', latency: ' + latency;
+        setTimeout(debugUpdate, 1000);
+    }
+    
+    debugUpdate();
     
 
-    
     // ---------------------------
-    // Drawing on canvas
+    // PIXI drawing
     // ---------------------------
-    var COLORS = {
-        MAP: '#c8f040'
-    };
-    
-    var TILE = {
-        WIDTH: 20,
-        HEIGHT: 20
-    };
-    
-    function render() {
-        drawMap();
-        drawChars();
-    }
+
     
     function drawMap() {
-        ui.ctx.fillStyle = COLORS.MAP;
-        ui.ctx.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
-    }
-    
-    
-    function drawChar(char) {
-        ui.ctx.fillStyle = char.color;
-        ui.ctx.fillRect(char.x, char.y, TILE.WIDTH, TILE.HEIGHT);
+        var i, j;
+        var sprite;
+        
+        var mapGround = new PIXI.DisplayObjectContainer();
+        
+        mapGround.position.x = 0;
+        mapGround.position.y = 0;
+        stage.addChild(mapGround);
+
+        
+        for (i = 0; i < game.WORLD.WIDTH; i += 1) {
+
+            for (j = 0; j < game.WORLD.HEIGHT; j += 1) {
+                // fill ground with grass
+                sprite = new PIXI.Sprite(textures.grass);
+                sprite.position.x = i * game.TILE.WIDTH;
+                sprite.position.y = j * game.TILE.HEIGHT;
+                mapGround.addChild(sprite);
+                
+            }
+        }
     }
     
     
     function drawChars() {
-        var i;
+        var i, c, s;
+        
         for (i in game.players) {
-            drawChar(game.players[i]);
+            c = game.players[i];
+            s = sprites.players[i];
+            // add new sprite to stage if it does not exist yet
+            if (s === undefined) {
+                s = new PIXI.Sprite(textures.hero);
+                s.tint = c.tint;
+                stage.addChild(s);
+                sprites.players[i] = s;
+            }
+            s.position.x = c.x;
+            s.position.y = c.y;
         }
+        
         for (i in game.npcs) {
-            drawChar(game.npcs[i]);
+            c = game.npcs[i];
+            s = sprites.npcs[i];
+            // add new sprite to stage if it does not exist yet
+            if (s === undefined) {
+                s = new PIXI.Sprite(textures.npc);
+                s.tint = c.tint;
+                stage.addChild(s);
+                sprites.npcs[i] = s;
+            }
+            s.position.x = c.x;
+            s.position.y = c.y;
         }
+        
+        // remove chars that left
+        for (i in sprites.players) {
+            if (game.players[i] === undefined) {
+                stage.removeChild(sprites.players[i]);
+                delete sprites.players[i];
+            }
+        }
+            
+        for (i in sprites.npcs) {
+            if (game.npcs[i] === undefined) {
+                stage.removeChild(sprites.npcs[i]);
+                delete sprites.npcs[i];
+            }
+        }
+        
         
     }
     
@@ -131,6 +224,7 @@ window.onload = function () {
     
     // ------------------------------------------------------------------------
     // keyboard controls
+    // ----------------------------------
     var KEYBOARD = {
         LEFT: 37,
         UP: 38,
@@ -165,8 +259,32 @@ window.onload = function () {
     
     
     // ----------------------------------
-    // Start client updates
-    update();
+    // Initialize PIXI stage and start animation loop
+    // ------------------------------------
+    
+    var textures = {
+        grass: PIXI.Texture.fromImage('public/grass.png'),
+        hero: PIXI.Texture.fromImage('public/hero.png'),
+        npc: PIXI.Texture.fromImage('public/tree.png')
+    };
+    
+    drawMap();
+    
+    // collection of character sprites
+    var sprites = {
+        players: {},
+        npcs: {}
+    };
+    
+    drawChars();
+    
+    animate();
     
 
-};
+}, false);
+    
+
+    
+function timestamp() {
+    return new Date().getTime();
+}

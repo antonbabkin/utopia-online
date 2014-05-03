@@ -10,16 +10,13 @@ var gameCoreConstructor = function (server) {
     // Private properties
     var prv = {};
     
-    prv.randomColor = function () {
-        return '#' + (Math.random() * 0xFFFFFF << 0).toString(16);
-    };
     
     // return a player with random characteristics
     prv.createPlayer = function () {
         var player = {};
-        player.x = Math.random() * game.world.width;
-        player.y = Math.random() * game.world.height;
-        player.color = prv.randomColor();
+        player.x = Math.random() * game.WORLD.WIDTH_P;
+        player.y = Math.random() * game.WORLD.HEIGHT_P;
+        player.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
         return player;
     };
     
@@ -27,13 +24,40 @@ var gameCoreConstructor = function (server) {
     
     // Game object to be returned by constructor
     var game = {};
+
+    // -------------------------
+    // Constants
+    // -------------------------
+    game.COLORS = {
+        MAP: '#c8f040',
+        UI_PANEL: '#0ff'
+    };
+    
+    // Tile size in pixels
+    game.TILE = {
+        WIDTH: 32,
+        HEIGHT: 32
+    };
+    
+    // World size in tiles and pixels
+    game.WORLD = {
+        WIDTH: 15,
+        HEIGHT: 15
+    };
+    game.WORLD.WIDTH_P = game.WORLD.WIDTH * game.TILE.WIDTH;
+    game.WORLD.HEIGHT_P = game.WORLD.HEIGHT * game.TILE.HEIGHT;
+    
+    // UI sidepanel size in pixels
+    game.UI_PANEL = {
+        WIDTH: Math.floor(game.WORLD.WIDTH_P / 2),
+        HEIGHT: game.WORLD.HEIGHT_P
+    };
+    
+    
+    
     
     game.server = server;
     
-    game.world = {
-        height: 20 * 15,
-        width: 20 * 15
-    };
     
     game.players = {};
     game.playersCount = 0;
@@ -58,8 +82,8 @@ var gameCoreConstructor = function (server) {
             return x1;
         }
         
-        char.x = wrap(char.x, 0, game.world.width);
-        char.y = wrap(char.y, 0, game.world.height);
+        char.x = wrap(char.x, 0, game.WORLD.WIDTH_P);
+        char.y = wrap(char.y, 0, game.WORLD.HEIGHT_P);
         
         return char;  
     };

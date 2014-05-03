@@ -103,6 +103,12 @@ var gameServerConstructor = function (sockets) {
         client.on('message', function (m) {
             prv.onMessage(client, m);
         });
+        
+        
+        // Respond to ping request
+        client.on('ping', function () {
+            client.emit('pong');
+        });
 
      
     });

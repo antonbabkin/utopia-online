@@ -7,8 +7,9 @@
         <!-- Library code -->
         <!-- Load socket.io client side contents. -->
 		<script src="/socket.io/socket.io.js"></script>
+        <!-- PIXI.js engine -->
+        <script src="/pixi.dev.js"></script>
 
-	 	
         <!-- Game code -->
         <!-- Load the common game code. -->
 		<script src="game_core.js"></script>
@@ -18,9 +19,9 @@
 	</head>
 
 	<body>
-        <div id="game_window" style="background-color: #FFA500;">
-            <canvas id="canvas" style="background-color: #afff75; float: left;">Your device does not support canvas.</canvas>
-            <div id="ui_panel" style="background-color: #78d5ff; float: left;"></div>
+        <div id="game_window">
+            <div id="canvas_div" style="float: left;"></div>
+            <div id="ui_panel" style="float: left;"></div>
         </div>
 	</body>
 </html>

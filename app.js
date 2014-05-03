@@ -33,6 +33,21 @@ app.get('/game_client.js', function (req, res, next) {
     res.sendfile(__dirname + '/game_client.js');
 });
 
+app.get('/pixi.js', function (req, res, next) {
+    res.sendfile(__dirname + '/pixi.js');
+});
+
+app.get('/pixi.dev.js', function (req, res, next) {
+    res.sendfile(__dirname + '/pixi.dev.js');
+});
+
+// beware: everything requested from /public/ folder will be served
+app.get(/(^\/public\/.+)/, function (req, res, next) {
+    var file = req.params[0];
+    console.log('request file ' + file);
+    res.sendfile(__dirname + file);
+});
+
 
 
 // ----
