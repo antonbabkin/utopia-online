@@ -22,6 +22,34 @@ var gameServerConstructor = function (sockets) {
     var game;
     
     
+    prv.createMap = function () {
+        var i, j, r;
+        game.world.ground = [];
+        game.world.objects = [];
+
+        for (i = 0; i < game.WORLD.WIDTH; i += 1) {
+            game.world.ground[i] = [];
+            game.world.objects[i] = [];
+            for (j = 0; j < game.WORLD.HEIGHT; j += 1) {
+                if (Math.random() < 0.3) {
+                    game.world.ground[i][j] = game.GROUNDS.SAND;
+                    if (Math.random() < 0.1) {
+                        game.world.objects[i][j] = game.OBJECTS.PALM;
+                    }
+                } else {
+                    game.world.ground[i][j] = game.GROUNDS.GRASS;
+                    r = Math.random();
+                    if (r < 0.1) {
+                        game.world.objects[i][j] = game.OBJECTS.ROCK;
+                    } else if (r < 0.3) {
+                        game.world.objects[i][j] = game.OBJECTS.TREE;
+                    }
+                }
+            }
+        }
+    };
+    
+    
     
     server.createGame = function () {
 
@@ -29,6 +57,8 @@ var gameServerConstructor = function (sockets) {
         
         game.npcs[0] = game.createNpc();
         game.npcsCount = 1;
+        
+        prv.createMap();
         
         prv.update();
         
@@ -79,22 +109,37 @@ var gameServerConstructor = function (sockets) {
         // Inputs listener
         client.on('input', function (dir) {
             var p = game.players[client.id];
-            switch (dir) {
-                case 'e':
-                    p.x += 5;
-                    break;
-                case 'w':
-                    p.x -= 5;
-                    break;
-                case 'n':
-                    p.y -= 5;
-                    break;
-                case 's':
-                    p.y += 5;
-                    break;
-            }
+            var newPos = {
+                x: p.x,
+                y: p.y
+            };
             
-            p = game.wrapOverEdge(p);
+            var timestamp = Date.now();
+            if (p.lastWalk + game.WALK_DELAY / p.speed < timestamp) {
+
+                switch (dir) {
+                    case 'e':
+                        newPos.x += 1;
+                        break;
+                    case 'w':
+                        newPos.x -= 1;
+                        break;
+                    case 'n':
+                        newPos.y -= 1;
+                        break;
+                    case 's':
+                        newPos.y += 1;
+                        break;
+                }
+
+                game.wrapOverWorld(newPos);
+                
+                if (typeof game.world.objects[newPos.x][newPos.y] !== 'number') {
+                    p.lastWalk = timestamp;
+                    p.x = newPos.x;
+                    p.y = newPos.y;
+                }
+            }
             
         });
 
@@ -125,11 +170,31 @@ var gameServerConstructor = function (sockets) {
         
         // Do some random movement of NPCs
         var jn, n;
+        var newPos;
+        var r;
+        var timestamp = Date.now();
         for (jn in game.npcs) {
             n = game.npcs[jn];
-            n.x += Math.random() * 10 - 5;
-            n.y += Math.random() * 10 - 5;
-            n = game.wrapOverEdge(n);
+
+            if (n.lastWalk + game.WALK_DELAY / n.speed < timestamp) {
+                do {
+                    newPos = {
+                        x: n.x,
+                        y: n.y
+                    }
+                    r = 1 - 2 * Math.round(Math.random());
+                    if (Math.random() < 0.5) {
+                        newPos.x += r;
+                    } else {
+                        newPos.y += r;
+                    }
+                    game.wrapOverWorld(newPos);
+                } while (typeof game.world.objects[newPos.x][newPos.y] === 'number');
+                
+                n.lastWalk = timestamp;
+                n.x = newPos.x;
+                n.y = newPos.y;
+            }
         }
         
         
@@ -137,7 +202,8 @@ var gameServerConstructor = function (sockets) {
         
         var state = {
             players: game.players,
-            npcs: game.npcs
+            npcs: game.npcs,
+            world: game.world
         };
         
         

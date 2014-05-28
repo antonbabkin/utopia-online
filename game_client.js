@@ -24,13 +24,13 @@ window.addEventListener('load', function clientLoader() {
         panel: document.getElementById('ui_panel')
     };
     
-    ui.window.style.width = (game.WORLD.WIDTH_P + game.UI_PANEL.WIDTH) + 'px';
+    ui.window.style.width = (game.VIEWPORT.WIDTH_P + game.UI_PANEL.WIDTH) + 'px';
     ui.window.style.height = game.UI_PANEL.HEIGHT + 'px';
     
-    ui.canvasDiv.style.width = game.WORLD.WIDTH_P + 'px';
-    ui.canvasDiv.style.height = game.WORLD.HEIGHT_P + 'px';
+    ui.canvasDiv.style.width = game.VIEWPORT.WIDTH_P + 'px';
+    ui.canvasDiv.style.height = game.VIEWPORT.HEIGHT_P + 'px';
 
-    var renderer = PIXI.autoDetectRenderer(game.WORLD.WIDTH_P, game.WORLD.HEIGHT_P);
+    var renderer = PIXI.autoDetectRenderer(game.VIEWPORT.WIDTH_P, game.VIEWPORT.HEIGHT_P);
     ui.canvasDiv.appendChild(renderer.view);
     
     ui.panel.style.width = game.UI_PANEL.WIDTH + 'px';
@@ -43,6 +43,9 @@ window.addEventListener('load', function clientLoader() {
     var uiDebug = document.createElement('p');
     ui.panel.appendChild(uiDebug);
     
+    var uiPos = document.createElement('p');
+    ui.panel.appendChild(uiPos);
+    
     // -------------------------
     // Listen to server events
     // -------------------------
@@ -52,6 +55,7 @@ window.addEventListener('load', function clientLoader() {
     
     function onConnected(data) {
         console.log('Connection established, client id: ' + data.id);
+        game.selfId = data.id;
     }
     
     socket.on('onconnected', onConnected);
@@ -73,8 +77,9 @@ window.addEventListener('load', function clientLoader() {
     
     
     function onWorldUpdate(state) {
-        game.players = state.players;
-        game.npcs = state.npcs;
+        game.players = state.players || game.players;
+        game.npcs = state.npcs || game.npcs;
+        game.world = state.world || game.world;
     }
     
     socket.on('world_update', onWorldUpdate);
@@ -113,7 +118,7 @@ window.addEventListener('load', function clientLoader() {
         
         requestAnimationFrame(animate); 
         
-        drawChars();
+        updateViewport();
         
         renderer.render(stage);
         
@@ -128,8 +133,17 @@ window.addEventListener('load', function clientLoader() {
             lastAnimTime = timestamp();
             fps = 1000 / deltaTime;
         }
+        
+        
+        // player position on UI panel
+        if (game.selfId && game.players[game.selfId]) {
+            uiPos.innerHTML = 'Player coordinates: ' + game.players[game.selfId].x + ',' + game.players[game.selfId].y;
+        }
 
     }
+    
+    
+
     
     
     // Update latency and FPS every second
@@ -144,81 +158,159 @@ window.addEventListener('load', function clientLoader() {
     // ---------------------------
     // PIXI drawing
     // ---------------------------
-
     
-    function drawMap() {
-        var i, j;
-        var sprite;
-        
-        var mapGround = new PIXI.DisplayObjectContainer();
-        
-        mapGround.position.x = 0;
-        mapGround.position.y = 0;
-        stage.addChild(mapGround);
-
-        
-        for (i = 0; i < game.WORLD.WIDTH; i += 1) {
-
-            for (j = 0; j < game.WORLD.HEIGHT; j += 1) {
-                // fill ground with grass
-                sprite = new PIXI.Sprite(textures.grass);
-                sprite.position.x = i * game.TILE.WIDTH;
-                sprite.position.y = j * game.TILE.HEIGHT;
-                mapGround.addChild(sprite);
-                
-            }
+    // transform world coords into 
+    function worldToViewport(obj) {
+        var x = obj.x;
+        var y = obj.y;
+        if (x < game.viewport.corner.x) {
+            x += game.WORLD.WIDTH;
         }
+        if (y < game.viewport.corner.y) {
+            y += game.WORLD.HEIGHT;
+        }
+        x -= game.viewport.corner.x;
+        y -= game.viewport.corner.y;
+        return {x: x, y: y};
     }
     
     
-    function drawChars() {
-        var i, c, s;
+    
+    // create PIXI sprites or update their properties
+    function updateViewport() {
         
+        // only update if connection established and at least one world state received from server
+        if (!game.selfId || !game.world.ground) {
+            return;
+        }
+        
+        var i, j, c, s;
+        var self = game.players[game.selfId];
+        
+        // world coords of the top-left corner of the viewport
+        game.viewport.corner = {
+            x: self.x - Math.floor(game.VIEWPORT.WIDTH / 2),
+            y: self.y - Math.floor(game.VIEWPORT.HEIGHT / 2)
+        };
+        game.wrapOverWorld(game.viewport.corner);
+        
+        // world coords of the current viewport tile
+        var cur = {};
+
+        
+        // ground and objects
+        sprites.ground = sprites.ground || [];
+        sprites.objects = sprites.objects || [];
+        for (i = 0; i < game.VIEWPORT.WIDTH; i += 1) {
+            sprites.ground[i] = sprites.ground[i] || [];
+            sprites.objects[i] = sprites.objects[i] || [];
+            
+            cur.x = game.viewport.corner.x + i;
+            
+            for (j = 0; j < game.VIEWPORT.HEIGHT; j += 1) {
+                
+                cur.y = game.viewport.corner.y + j;
+                game.wrapOverWorld(cur);
+                
+                
+                c = game.world.ground[cur.x][cur.y];
+                s = sprites.ground[i][j];               
+                
+                if (typeof s !== 'object') {
+                    s = new PIXI.Sprite(textures.ground[c]);
+                    s.position.x = i * game.TILE.WIDTH;
+                    s.position.y = j * game.TILE.HEIGHT;
+                    stage.addChild(s);               
+                    sprites.ground[i][j] = s;
+                } else {
+                    s.texture = textures.ground[c];
+                }
+                
+                
+                c = game.world.objects[cur.x][cur.y];
+                s = sprites.objects[i][j];
+                
+                if (typeof c !== 'number') {
+                    if (typeof s === 'object') {
+                        stage.removeChild(sprites.objects[i][j]);
+                        delete sprites.objects[i][j];
+                    }
+                } else {
+                    if (typeof s !== 'object') {
+                        s = new PIXI.Sprite(textures.objects[c]);
+                        s.position.x = i * game.TILE.WIDTH;
+                        s.position.y = j * game.TILE.HEIGHT;
+                        stage.addChild(s);               
+                        sprites.objects[i][j] = s;
+                    } else {
+                        s.texture = textures.objects[c];
+                    }
+                }
+                
+
+            }
+        }
+        
+        
+        // players
+        sprites.players = sprites.players || {};
+        
+        // add new / update
         for (i in game.players) {
             c = game.players[i];
             s = sprites.players[i];
-            // add new sprite to stage if it does not exist yet
-            if (s === undefined) {
+            
+            if (typeof s !== 'object') {
                 s = new PIXI.Sprite(textures.hero);
                 s.tint = c.tint;
-                stage.addChild(s);
+                stage.addChild(s);               
                 sprites.players[i] = s;
             }
-            s.position.x = c.x;
-            s.position.y = c.y;
+            
+            cur = worldToViewport(c);
+            s.position.x = cur.x * game.TILE.WIDTH;
+            s.position.y = cur.y * game.TILE.HEIGHT;           
         }
         
-        for (i in game.npcs) {
-            c = game.npcs[i];
-            s = sprites.npcs[i];
-            // add new sprite to stage if it does not exist yet
-            if (s === undefined) {
-                s = new PIXI.Sprite(textures.npc);
-                s.tint = c.tint;
-                stage.addChild(s);
-                sprites.npcs[i] = s;
-            }
-            s.position.x = c.x;
-            s.position.y = c.y;
-        }
-        
-        // remove chars that left
+        // remove old
         for (i in sprites.players) {
-            if (game.players[i] === undefined) {
+            if (typeof game.players[i] !== 'object' && typeof sprites.players[i] === 'object') {
                 stage.removeChild(sprites.players[i]);
                 delete sprites.players[i];
             }
         }
+        
+        // NPCs
+        sprites.npcs = sprites.npcs || {};
             
-        for (i in sprites.npcs) {
-            if (game.npcs[i] === undefined) {
-                stage.removeChild(sprites.npcs[i]);
-                delete sprites.npcs[i];
+        // add new / update
+        for (i in game.npcs) {
+            c = game.npcs[i];
+            s = sprites.npcs[i];
+            
+
+            if (typeof s !== 'object') {
+                s = new PIXI.Sprite(textures.npc);
+                stage.addChild(s);               
+                sprites.npcs[i] = s;
             }
+
+            cur = worldToViewport(c);
+            s.position.x = cur.x * game.TILE.WIDTH;
+            s.position.y = cur.y * game.TILE.HEIGHT;
+            
         }
         
-        
+        // remove old
+        for (i in sprites.npcs) {           
+            if (typeof game.npcs[i] !== 'object' && typeof sprites.npcs[i] === 'object') {
+                stage.removeChild(sprites.npcs[i]);
+                delete sprites.npcs[i];
+            } 
+        }
     }
+
+    
     
     
     
@@ -263,20 +355,21 @@ window.addEventListener('load', function clientLoader() {
     // ------------------------------------
     
     var textures = {
-        grass: PIXI.Texture.fromImage('public/grass.png'),
+        ground: {},
+        objects: {},
         hero: PIXI.Texture.fromImage('public/hero.png'),
-        npc: PIXI.Texture.fromImage('public/tree.png')
+        npc: PIXI.Texture.fromImage('public/sphere.png')
     };
     
-    drawMap();
+    textures.ground[game.GROUNDS.GRASS] = PIXI.Texture.fromImage('public/grass.png');
+    textures.ground[game.GROUNDS.SAND] = PIXI.Texture.fromImage('public/sand.png');
+    textures.objects[game.OBJECTS.TREE] = PIXI.Texture.fromImage('public/tree.png');
+    textures.objects[game.OBJECTS.PALM] = PIXI.Texture.fromImage('public/palm.png');
+    textures.objects[game.OBJECTS.ROCK] = PIXI.Texture.fromImage('public/rock.png');
+    
     
     // collection of character sprites
-    var sprites = {
-        players: {},
-        npcs: {}
-    };
-    
-    drawChars();
+    var sprites = {};
     
     animate();
     

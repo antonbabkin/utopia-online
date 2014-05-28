@@ -55,6 +55,7 @@ app.get(/(^\/public\/.+)/, function (req, res, next) {
 // ----
 var io = require('socket.io').listen(server);
 
+// Don't really know how this works...
 io.configure(function () {
     io.set('log level', 0);
 

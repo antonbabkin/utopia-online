@@ -10,20 +10,22 @@ var gameCoreConstructor = function (server) {
     // Private properties
     var prv = {};
     
-    
+        
+    // Game object to be returned by constructor
+    var game = {};
+
     // return a player with random characteristics
     prv.createPlayer = function () {
         var player = {};
-        player.x = Math.random() * game.WORLD.WIDTH_P;
-        player.y = Math.random() * game.WORLD.HEIGHT_P;
+        player.x = Math.floor(Math.random() * game.WORLD.WIDTH);
+        player.y = Math.floor(Math.random() * game.WORLD.HEIGHT);
         player.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
+        player.lastWalk = Date.now();
+        player.speed = 3;
         return player;
     };
     
     
-    
-    // Game object to be returned by constructor
-    var game = {};
 
     // -------------------------
     // Constants
@@ -41,22 +43,54 @@ var gameCoreConstructor = function (server) {
     
     // World size in tiles and pixels
     game.WORLD = {
+        WIDTH: 30,
+        HEIGHT: 30
+    };
+    
+     // visible part of the map
+    game.VIEWPORT = {
         WIDTH: 15,
         HEIGHT: 15
-    };
-    game.WORLD.WIDTH_P = game.WORLD.WIDTH * game.TILE.WIDTH;
-    game.WORLD.HEIGHT_P = game.WORLD.HEIGHT * game.TILE.HEIGHT;
+    };    
+    game.VIEWPORT.WIDTH_P = game.VIEWPORT.WIDTH * game.TILE.WIDTH;
+    game.VIEWPORT.HEIGHT_P = game.VIEWPORT.HEIGHT * game.TILE.HEIGHT;
     
     // UI sidepanel size in pixels
     game.UI_PANEL = {
-        WIDTH: Math.floor(game.WORLD.WIDTH_P / 2),
-        HEIGHT: game.WORLD.HEIGHT_P
+        WIDTH: Math.floor(game.VIEWPORT.WIDTH_P / 2),
+        HEIGHT: game.VIEWPORT.HEIGHT_P
     };
     
+    
+   
+
+    
+    // standard walk delay with 100% speed and good ground (road, grass...)
+    // = time in ms to walk 1 tile
+    game.WALK_DELAY = 1000;
+    
+    
+    // ground types
+    game.GROUNDS = {
+        SAND: 0,
+        GRASS: 1
+    };
+    
+    // object types
+    game.OBJECTS = {
+        TREE: 0,
+        PALM: 1,
+        ROCK: 2
+    };
     
     
     
     game.server = server;
+    
+    
+    game.world = {};
+    game.viewport = {};
+
     
     
     game.players = {};
@@ -66,27 +100,30 @@ var gameCoreConstructor = function (server) {
     game.npcs = [];
     game.npcsCount = 0;
     game.createNpc = prv.createPlayer;
+    
+
+    // wrap coordinate around box edges
+    // x: point to wrap; a: low edge coordinate; d: box dimension
+    game.wrap = function (x, a, d) {
+        while (x < a || x >= a + d) {
+            if (x < a) {
+                x += d;
+            } else { // x >= a + d
+                x -= d;
+            }
+        }
+        return x;
+    };
+    
+    game.wrapOverWorld = function (obj) {
+        obj.x = game.wrap(obj.x, 0, game.WORLD.WIDTH);
+        obj.y = game.wrap(obj.y, 0, game.WORLD.HEIGHT);
+        return obj;
+    };
+    
 
     
     
-    game.wrapOverEdge = function (char) {
-        function wrap(x0, a, b) {
-            var x1;
-            if (x0 < a) {
-                x1 = b - (a - x0);
-            } else if (x0 > b) {
-                x1 = a + (x0 - b);
-            } else {
-                x1 = x0;
-            }
-            return x1;
-        }
-        
-        char.x = wrap(char.x, 0, game.WORLD.WIDTH_P);
-        char.y = wrap(char.y, 0, game.WORLD.HEIGHT_P);
-        
-        return char;  
-    };
 
     
 
