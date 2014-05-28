@@ -43,8 +43,8 @@ var gameCoreConstructor = function (server) {
     
     // World size in tiles and pixels
     game.WORLD = {
-        WIDTH: 30,
-        HEIGHT: 30
+        WIDTH: 20,
+        HEIGHT: 20
     };
     
      // visible part of the map
@@ -80,7 +80,8 @@ var gameCoreConstructor = function (server) {
     game.OBJECTS = {
         TREE: 0,
         PALM: 1,
-        ROCK: 2
+        ROCK: 2,
+        WOOD: 3
     };
     
     

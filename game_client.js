@@ -37,6 +37,10 @@ window.addEventListener('load', function clientLoader() {
     ui.panel.style.height = game.UI_PANEL.HEIGHT + 'px';
     ui.panel.style.backgroundColor = game.COLORS.UI_PANEL;
     
+    var uiInfo = document.createElement('p');
+    ui.panel.appendChild(uiInfo);
+    uiInfo.innerHTML = 'WASD to move. SPACEBAR to place wood. Walk into tree or wood to remove it.';
+    
     var uiPlayers = document.createElement('p');
     ui.panel.appendChild(uiPlayers);
     
@@ -185,12 +189,12 @@ window.addEventListener('load', function clientLoader() {
         }
         
         var i, j, c, s;
-        var self = game.players[game.selfId];
+
         
         // world coords of the top-left corner of the viewport
         game.viewport.corner = {
-            x: self.x - Math.floor(game.VIEWPORT.WIDTH / 2),
-            y: self.y - Math.floor(game.VIEWPORT.HEIGHT / 2)
+            x: game.players[game.selfId].x - Math.floor(game.VIEWPORT.WIDTH / 2),
+            y: game.players[game.selfId].y - Math.floor(game.VIEWPORT.HEIGHT / 2)
         };
         game.wrapOverWorld(game.viewport.corner);
         
@@ -291,6 +295,7 @@ window.addEventListener('load', function clientLoader() {
 
             if (typeof s !== 'object') {
                 s = new PIXI.Sprite(textures.npc);
+                s.tint = c.tint;
                 stage.addChild(s);               
                 sprites.npcs[i] = s;
             }
@@ -321,31 +326,39 @@ window.addEventListener('load', function clientLoader() {
         LEFT: 37,
         UP: 38,
         RIGHT: 39,
-        DOWN: 40
+        DOWN: 40,
+        SPACEBAR: 32,
+        A: 65,
+        W: 87,
+        D: 68,
+        S: 83
     };
     
     window.addEventListener('keydown', function (e) {
-        var dir;
+        var key;
         switch (e.keyCode) {
-        case KEYBOARD.UP:
+        case KEYBOARD.W:
             e.preventDefault();
-            dir = 'n';
+            key = 'n';
             break;
-        case KEYBOARD.DOWN:
+        case KEYBOARD.S:
             e.preventDefault();
-            dir = 's';
+            key = 's';
             break;
-        case KEYBOARD.LEFT:
+        case KEYBOARD.A:
             e.preventDefault();
-            dir = 'w';
+            key = 'w';
             break;
-        case KEYBOARD.RIGHT:
+        case KEYBOARD.D:
             e.preventDefault();
-            dir = 'e';
+            key = 'e';
+            break;
+        case KEYBOARD.SPACEBAR:
+            key = 'a';
             break;
         }
         
-        socket.emit('input', dir);
+        socket.emit('input', key);
 
     }, false);
     
@@ -366,6 +379,7 @@ window.addEventListener('load', function clientLoader() {
     textures.objects[game.OBJECTS.TREE] = PIXI.Texture.fromImage('public/tree.png');
     textures.objects[game.OBJECTS.PALM] = PIXI.Texture.fromImage('public/palm.png');
     textures.objects[game.OBJECTS.ROCK] = PIXI.Texture.fromImage('public/rock.png');
+    textures.objects[game.OBJECTS.WOOD] = PIXI.Texture.fromImage('public/wood.png');
     
     
     // collection of character sprites

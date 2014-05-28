@@ -56,7 +56,9 @@ var gameServerConstructor = function (sockets) {
         game = require('./game_core.js');
         
         game.npcs[0] = game.createNpc();
-        game.npcsCount = 1;
+        game.npcs[1] = game.createNpc();
+        game.npcs[2] = game.createNpc();
+        game.npcsCount = 3;
         
         prv.createMap();
         
@@ -107,7 +109,7 @@ var gameServerConstructor = function (sockets) {
         
         
         // Inputs listener
-        client.on('input', function (dir) {
+        client.on('input', function (key) {
             var p = game.players[client.id];
             var newPos = {
                 x: p.x,
@@ -116,29 +118,44 @@ var gameServerConstructor = function (sockets) {
             
             var timestamp = Date.now();
             if (p.lastWalk + game.WALK_DELAY / p.speed < timestamp) {
-
-                switch (dir) {
-                    case 'e':
-                        newPos.x += 1;
-                        break;
-                    case 'w':
-                        newPos.x -= 1;
-                        break;
-                    case 'n':
-                        newPos.y -= 1;
-                        break;
-                    case 's':
-                        newPos.y += 1;
-                        break;
-                }
-
-                game.wrapOverWorld(newPos);
                 
-                if (typeof game.world.objects[newPos.x][newPos.y] !== 'number') {
-                    p.lastWalk = timestamp;
-                    p.x = newPos.x;
-                    p.y = newPos.y;
+                if (key !== 'a') { // non-action
+
+                    switch (key) {
+                        case 'e':
+                            newPos.x += 1;
+                            break;
+                        case 'w':
+                            newPos.x -= 1;
+                            break;
+                        case 'n':
+                            newPos.y -= 1;
+                            break;
+                        case 's':
+                            newPos.y += 1;
+                            break;
+                    }
+
+                    game.wrapOverWorld(newPos);
+
+                    var obj = game.world.objects[newPos.x][newPos.y];
+
+                    if (typeof obj !== 'number') {
+                        p.lastWalk = timestamp;
+                        p.x = newPos.x;
+                        p.y = newPos.y;
+                    } else {
+                        if (obj === game.OBJECTS.TREE || obj === game.OBJECTS.PALM || obj === game.OBJECTS.WOOD) {
+                            delete game.world.objects[newPos.x][newPos.y];
+                        }
+                    }
+                } else { // action
+                    if (typeof game.world.objects[p.x][p.y] !== 'number') {
+                        game.world.objects[p.x][p.y] = game.OBJECTS.WOOD;
+                    }
+                    
                 }
+                    
             }
             
         });
