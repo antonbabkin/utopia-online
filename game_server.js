@@ -15,38 +15,30 @@ var gameServerConstructor = function (sockets) {
     // properties of this object will be a public interface that has access to private properties
     var server = {};
     
+    var fs = require('fs');
+    
     // namespace for private properties
     var prv = {};
     prv.clients = {};
     
     var game;
     
-    
-    prv.createMap = function () {
-        var i, j, r;
-        game.world.ground = [];
-        game.world.objects = [];
-
-        for (i = 0; i < game.WORLD.WIDTH; i += 1) {
-            game.world.ground[i] = [];
-            game.world.objects[i] = [];
-            for (j = 0; j < game.WORLD.HEIGHT; j += 1) {
-                if (Math.random() < 0.3) {
-                    game.world.ground[i][j] = game.GROUNDS.SAND;
-                    if (Math.random() < 0.1) {
-                        game.world.objects[i][j] = game.OBJECTS.PALM;
-                    }
-                } else {
-                    game.world.ground[i][j] = game.GROUNDS.GRASS;
-                    r = Math.random();
-                    if (r < 0.1) {
-                        game.world.objects[i][j] = game.OBJECTS.ROCK;
-                    } else if (r < 0.3) {
-                        game.world.objects[i][j] = game.OBJECTS.TREE;
-                    }
-                }
+    // async read map file into the object
+    // start server update loops after map has been loaded
+    prv.readMap = function () {
+        fs.readFile('map.json', 'utf8', function (err, data) {
+            if (err) {
+                console.log('Error reading map.json');
+                console.log(err);
             }
-        }
+            
+            console.log('map.json read successfully');
+            game.world = JSON.parse(data);
+            
+            // after map is loaded, start server updates
+            prv.update();
+            setTimeout(saveServer, 60 * 1000);
+        });
     };
     
     
@@ -60,11 +52,10 @@ var gameServerConstructor = function (sockets) {
         game.npcs[2] = game.createNpc();
         game.npcsCount = 3;
         
-        prv.createMap();
-        
-        prv.update();
         
         console.log('game created');
+
+        prv.readMap();
     };
     
     
@@ -229,6 +220,25 @@ var gameServerConstructor = function (sockets) {
         
         setTimeout(prv.update, 100);
     };
+    
+    
+    // write server state to the disk every minute
+    function saveServer() {
+        
+        console.log('Server backup: ', Date());
+        
+        // save ground and objects into map.json
+        fs.writeFile('map.json', JSON.stringify(game.world), function (err) {
+            if (err) {
+                console.error('Failed to write generated map to map.json');
+                console.log(err);
+            }
+            console.log('---- map.json saved successfully');
+        });
+        
+        setTimeout(saveServer, 60 * 1000);
+    }
+        
 
     
     return server;
