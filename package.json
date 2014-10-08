@@ -17,8 +17,11 @@
   ],
   "author": "Anton Babkin",
   "license": "IDK",
+  "engines": {
+    "node": "0.10.x"
+  },
   "dependencies": {
-    "express": "*",
-    "socket.io": "*"
+    "express": "4.x",
+    "socket.io": "1.x"
   }
 }
