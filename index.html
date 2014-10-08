@@ -1,27 +1,27 @@
 <!DOCTYPE html>
 <html>
-	<head>
+    <head>
 
-		<title>Utopia Online - Sandbox MMORPG</title>
+        <title>Utopia Online - Sandbox MMORPG</title>
 
         <!-- Library code -->
         <!-- Load socket.io client side contents. -->
-		<script src="/socket.io/socket.io.js"></script>
+        <script src="/socket.io/socket.io.js"></script>
         <!-- PIXI.js engine -->
         <script src="/pixi.dev.js"></script>
 
         <!-- Game code -->
-        <!-- Load the common game code. -->
-		<script src="game_core.js"></script>
+        <!-- Load common module. -->
+        <script src="game_common.js"></script>
         <!-- Load the game client code. -->
-		<script src="game_client.js"></script>		
+        <script src="game_client.js"></script>
 
-	</head>
+    </head>
 
-	<body>
+    <body>
         <div id="game_window">
             <div id="canvas_div" style="float: left;"></div>
             <div id="ui_panel" style="float: left;"></div>
         </div>
-	</body>
+    </body>
 </html>

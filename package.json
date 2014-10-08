@@ -18,7 +18,7 @@
   "author": "Anton Babkin",
   "license": "IDK",
   "dependencies": {
-    "express": "~4.0.0",
-    "socket.io": "~0.9.16"
+    "express": "*",
+    "socket.io": "*"
   }
 }
