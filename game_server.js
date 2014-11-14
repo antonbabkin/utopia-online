@@ -25,6 +25,12 @@ function gameServerConstructor(io) {
     var base = common.base;
     var util = common.util;
 
+
+    var WORLD = {
+        NPC_LIMIT: 5 // max number of npcs in the world
+    };
+
+
     // server main update loop
     function update() {
 
@@ -33,10 +39,10 @@ function gameServerConstructor(io) {
         var possibleMoves, namesOfMoves, numOfMoves;
         var coords;
         var timestamp = Date.now();
-        game.npcs.forEach(function (n) {
-            if (n.lastWalk + base.WALK_DELAY / n.speed < timestamp) {
+        game.npcs.forEach(function (npc) {
+            if (npc.lastAction + base.ACTION_DELAY / npc.speed < timestamp) {
                 // look at 4 directions to see which of them are not blocked by objects
-                possibleMoves = util.coordsAround(n);
+                possibleMoves = util.coordsAround(npc);
                 ['n', 'e', 's', 'w'].forEach(function (dir) {
                     coords = possibleMoves[dir];
                     if (typeof game.world.objects[coords.x][coords.y] === 'number') {
@@ -49,11 +55,13 @@ function gameServerConstructor(io) {
                 // if at least one direction is clear, choose randomly
                 if (numOfMoves > 0) {
                     coords = possibleMoves[namesOfMoves[Math.floor(Math.random() * numOfMoves)]];
-                    n.x = coords.x;
-                    n.y = coords.y;
+                    delete game.world.npcs[npc.x][npc.y];
+                    npc.x = coords.x;
+                    npc.y = coords.y;
+                    game.world.npcs[npc.x][npc.y] = npc;
                 }
                 // in any case, make walk delay until next move attempt
-                n.lastWalk = timestamp;
+                npc.lastAction = timestamp;
             }
         });
 
@@ -76,11 +84,10 @@ function gameServerConstructor(io) {
 
     // environment update loop
     function updateEnvironment() {
-        var i, j;
 
         // new trees grow and wood is broken with probability 10%
-        for (i = 0; i < base.WORLD.WIDTH; i += 1) {
-            for (j = 0; j < base.WORLD.HEIGHT; j += 1) {
+        for (let i = 0; i < base.WORLD.WIDTH; i += 1) {
+            for (let j = 0; j < base.WORLD.HEIGHT; j += 1) {
                 if (Math.random() < 0.1) {
                     if (game.world.objects[i][j] === base.OBJECTS.WOOD) {
                         // wood is broken
@@ -98,7 +105,8 @@ function gameServerConstructor(io) {
         }
 
 
-        // new monsters respawn, so the total number is always 5
+        // new monsters respawn
+        spawnNpcs();
 
 
         // update after regularly at given frequency
@@ -130,13 +138,22 @@ function gameServerConstructor(io) {
         player.x = Math.floor(Math.random() * base.WORLD.WIDTH);
         player.y = Math.floor(Math.random() * base.WORLD.HEIGHT);
         player.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
-        player.lastWalk = Date.now();
-        player.speed = 3;
+        player.lastAction = Date.now();
+        player.speed = 5;
+        player.inventory = [];
         return player;
     }
 
     // function to create random NPC
-    var createNpc = createPlayer;
+    function createNpc() {
+        var npc = {};
+        npc.x = Math.floor(Math.random() * base.WORLD.WIDTH);
+        npc.y = Math.floor(Math.random() * base.WORLD.HEIGHT);
+        npc.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
+        npc.lastAction = Date.now();
+        npc.speed = 1;
+        return npc;
+    }
 
 
     // async read map file into the object
@@ -149,7 +166,9 @@ function gameServerConstructor(io) {
             }
 
             console.log('map.json read successfully');
-            game.world = JSON.parse(data);
+            var w = JSON.parse(data);
+            game.world.ground = w.ground;
+            game.world.objects = w.objects;
 
             // after map is loaded, start server update loops
             update();
@@ -165,16 +184,32 @@ function gameServerConstructor(io) {
     // create an instance of the game and read  map
     server.createGame = function () {
 
-        game.npcs[0] = createNpc();
-        game.npcs[1] = createNpc();
-        game.npcs[2] = createNpc();
+        readMap();
+
+        // grids for locations of npcs, players and loot bags
+        game.world.npcs = [];
+        game.world.players = [];
+        game.world.bags = [];
+        for (let i = 0; i < base.WORLD.WIDTH; i += 1) {
+            game.world.npcs[i] = [];
+            game.world.players[i] = [];
+            game.world.bags[i] = [];
+        }
+
+        spawnNpcs();
 
         console.log('game created');
 
-        readMap();
     };
 
 
+    function spawnNpcs() {
+        for (let i = game.npcs.length; i < WORLD.NPC_LIMIT; i += 1) {
+            let npc = createNpc();
+            game.npcs.push(npc);
+            game.world.npcs[npc.x][npc.y] = npc;
+        }
+    }
 
 
 
@@ -182,7 +217,9 @@ function gameServerConstructor(io) {
     // add player on connection
     function addPlayer(client) {
         clients[client.id] = client;
-        game.players[client.id] = createPlayer();
+        let player = createPlayer();
+        game.players[client.id] = player;
+        game.world.players[player.x][player.y] = player;
         var playersCount = Object.keys(game.players).length;
         console.log('Player ' + client.id + ' joined the game. Current number of players: ' + playersCount);
 
@@ -194,7 +231,9 @@ function gameServerConstructor(io) {
     // remove player on disconnection
     function removePlayer(client) {
         delete clients[client.id];
+        let player = game.players[client.id];
         delete game.players[client.id];
+        delete game.world.players[player.x][player.y];
         var playersCount = Object.keys(game.players).length;
         console.log('Player ' + client.id + ' left the game. Current number of players: ' + playersCount);
         client.broadcast.emit('players online', playersCount);
@@ -207,7 +246,7 @@ function gameServerConstructor(io) {
 
         console.log('\t socket.io:: player ' + client.id + ' connected');
 
-        client.emit('onconnected', {id: client.id});
+        client.emit('connected', {id: client.id});
 
 
         addPlayer(client);
@@ -221,17 +260,18 @@ function gameServerConstructor(io) {
 
 
         // Inputs listener
-        client.on('input', function (key) {
-            var p = game.players[client.id];
-            var newPos = {
-                x: p.x,
-                y: p.y
-            };
+        client.on('input', function onInput(key) {
+            let player = game.players[client.id];
 
-            var timestamp = Date.now();
-            if (p.lastWalk + base.WALK_DELAY / p.speed < timestamp) {
 
-                if (key !== 'a') { // non-action
+            const timestamp = Date.now();
+            if (player.lastAction + base.ACTION_DELAY / player.speed < timestamp) {
+
+                if (key === 'e' || key === 'w' || key === 'n' || key === 's') { // move
+                    let newPos = {
+                        x: player.x,
+                        y: player.y
+                    };
 
                     switch (key) {
                     case 'e':
@@ -250,23 +290,46 @@ function gameServerConstructor(io) {
 
                     util.wrapOverWorld(newPos);
 
-                    var obj = game.world.objects[newPos.x][newPos.y];
+                    const obj = game.world.objects[newPos.x][newPos.y];
+                    const npc = game.world.npcs[newPos.x][newPos.y];
 
-                    if (typeof obj !== 'number') {
-                        p.lastWalk = timestamp;
-                        p.x = newPos.x;
-                        p.y = newPos.y;
-                    } else {
+                    if (npc) {
+                        // attack if there is npc at destination
+                        const npcIndex = game.npcs.indexOf(npc);
+                        game.npcs.splice(npcIndex, 1);
+                        delete game.world.npcs[newPos.x][newPos.y];
+                        const item = common.base.ITEMS.LEATHER;
+                        player.inventory.push(item);
+                        client.emit('addItem', item);
+                        client.emit('hit', 'You hit the monster')
+
+                    } else if (typeof obj === 'number') {
+                        // interact if there is object at destination
                         if (obj === base.OBJECTS.TREE || obj === base.OBJECTS.PALM || obj === base.OBJECTS.WOOD) {
+                            const item = common.base.ITEMS.WOOD;
                             delete game.world.objects[newPos.x][newPos.y];
+                            player.inventory.push(item);
+                            client.emit('addItem', item);
                         }
+                    } else {
+                        // walk if there is no object at destination
+                        player.x = newPos.x;
+                        player.y = newPos.y;
                     }
-                } else { // action
-                    if (typeof game.world.objects[p.x][p.y] !== 'number') {
-                        game.world.objects[p.x][p.y] = base.OBJECTS.WOOD;
+                } else if (key === 'a') { // action
+                    if (typeof game.world.objects[player.x][player.y] !== 'number') {
+                        let item = common.base.ITEMS.WOOD;
+                        let index = player.inventory.indexOf(item);
+                        if (index >= 0) {
+                            game.world.objects[player.x][player.y] = base.OBJECTS.WOOD;
+                            player.inventory.splice(index, 1);
+                            client.emit('removeItem', item);
+                        }
                     }
 
                 }
+
+                player.lastAction = timestamp;
 
             }
 

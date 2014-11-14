@@ -8,29 +8,29 @@
 'use strict';
 
 // import game_core to have access to constants like game.OBJECTS etc
-var game = require('./game_core.js');
+var base = require('./game_common.js').base;
 
 var map = {};
 var i, j, r;
 map.ground = [];
 map.objects = [];
 
-for (i = 0; i < game.WORLD.WIDTH; i += 1) {
+for (i = 0; i < base.WORLD.WIDTH; i += 1) {
     map.ground[i] = [];
     map.objects[i] = [];
-    for (j = 0; j < game.WORLD.HEIGHT; j += 1) {
+    for (j = 0; j < base.WORLD.HEIGHT; j += 1) {
         if (Math.random() < 0.3) {
-            map.ground[i][j] = game.GROUNDS.SAND;
+            map.ground[i][j] = base.GROUNDS.SAND;
             if (Math.random() < 0.1) {
-                map.objects[i][j] = game.OBJECTS.PALM;
+                map.objects[i][j] = base.OBJECTS.PALM;
             }
         } else {
-            map.ground[i][j] = game.GROUNDS.GRASS;
+            map.ground[i][j] = base.GROUNDS.GRASS;
             r = Math.random();
             if (r < 0.1) {
-                map.objects[i][j] = game.OBJECTS.ROCK;
+                map.objects[i][j] = base.OBJECTS.ROCK;
             } else if (r < 0.3) {
-                map.objects[i][j] = game.OBJECTS.TREE;
+                map.objects[i][j] = base.OBJECTS.TREE;
             }
         }
     }

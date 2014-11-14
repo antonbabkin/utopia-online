@@ -61,7 +61,7 @@ function commonConstructor() {
 
     // standard walk delay with 100% speed and good ground (road, grass...)
     // = time in ms to walk 1 tile
-    common.base.WALK_DELAY = 1000;
+    common.base.ACTION_DELAY = 1000;
 
 
     // ground types
@@ -77,6 +77,17 @@ function commonConstructor() {
         ROCK: 2,
         WOOD: 3
     };
+
+    // inventory items
+    common.base.ITEMS = {
+        WOOD: 0,
+        LEATHER: 1
+    }
+
+    // inventory images
+    common.base.ITEMS_IMAGES = {};
+    common.base.ITEMS_IMAGES[common.base.ITEMS.WOOD] = 'wood';
+    common.base.ITEMS_IMAGES[common.base.ITEMS.LEATHER] = 'leather';
 
 
     // -------------------------

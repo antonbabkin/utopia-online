@@ -57,6 +57,24 @@ window.addEventListener('load', function clientLoader() {
     var uiPos = document.createElement('p');
     ui.panel.appendChild(uiPos);
 
+    // Player inventory
+    ui.inventory = {
+        div: document.createElement('div'),
+        p: document.createElement('p'),
+        update: function () {
+            var inv = 'Inventory:<br>';
+            game.players[game.selfId].inventory.forEach(function (item) {
+                inv += '<img src="public/' +
+                    common.base.ITEMS_IMAGES[item] +
+                    '.png">'
+            });
+            ui.inventory.p.innerHTML = inv;
+        }
+    };
+    ui.inventory.p.innerHTML = 'Inventory:<br>';
+    ui.inventory.div.appendChild(ui.inventory.p);
+    ui.panel.appendChild(ui.inventory.div);
+
     // -------------------------
     // PIXI assets
     // -------------------------
@@ -86,7 +104,7 @@ window.addEventListener('load', function clientLoader() {
 
     var socket = io();
 
-    socket.on('onconnected', function onConnected(data) {
+    socket.on('connected', function onConnected(data) {
         console.log('Connection established, client id: ' + data.id);
         game.selfId = data.id;
     });
@@ -105,7 +123,22 @@ window.addEventListener('load', function clientLoader() {
         game.world = state.world || game.world;
     });
 
+    socket.on('addItem', function onAddItem(item) {
+        var inv = game.players[game.selfId].inventory;
+        inv.push(item);
+        ui.inventory.update();
+    });
 
+    socket.on('removeItem', function onRemoveItem(item) {
+        var inv = game.players[game.selfId].inventory;
+        var index = inv.indexOf(item);
+        inv.splice(index, 1);
+        ui.inventory.update();
+    });
+
+    socket.on('hit', function onRemoveItem(msg) {
+        console.log(msg);
+    });
 
     // Check ping every 5 seconds
     var pingTime, latency;
