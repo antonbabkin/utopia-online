@@ -6,7 +6,6 @@
 /*jslint node: true, nomen: true */
 'use strict';
 
-var verbose = true;
 
 // ----
 // Set up Express server
@@ -46,11 +45,9 @@ app.use('/public', express.static(__dirname + '/public'));
 
 
 // ----
-// Socket.io setup
+// Run server on socket.io
 // ----
 var io = require('socket.io')(server);
 
-var gameServer = require('./game_server.js')(io);
-
-gameServer.createGame();
+require('./game_server.js')(io);
 

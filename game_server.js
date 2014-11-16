@@ -5,15 +5,8 @@
 /*jslint node: true, nomen: true, vars: true*/
 'use strict';
 
-var verbose = true;
 
-
-
-// returns a new server object
-function gameServerConstructor(io) {
-    // create an object to be returned
-    // properties of this object will be a public interface that has access to private properties
-    var server = {};
+function gameServer(io) {
 
     var fs = require('fs');
 
@@ -24,44 +17,94 @@ function gameServerConstructor(io) {
     var game = common.game;
     var base = common.base;
     var util = common.util;
+    var MOBS = common.mobs;
 
 
     var WORLD = {
-        NPC_LIMIT: 5 // max number of npcs in the world
+        MOB_LIMIT: 6 // max number of mobs in the world
     };
 
 
     // server main update loop
     function update() {
 
-        // Do some random movement of NPCs
-        var n;
-        var possibleMoves, namesOfMoves, numOfMoves;
-        var coords;
-        var timestamp = Date.now();
-        game.npcs.forEach(function (npc) {
-            if (npc.lastAction + base.ACTION_DELAY / npc.speed < timestamp) {
-                // look at 4 directions to see which of them are not blocked by objects
-                possibleMoves = util.coordsAround(npc);
+        // Mobs actions: moves, attacks
+        let timestamp = Date.now();
+        Object.keys(game.mobs).forEach(function (id) {
+            let mob = game.mobs[id];
+            if (mob.lastAction + base.ACTION_DELAY / mob.speed < timestamp) {
+                let possibleMoves = util.coordsAround(mob);
+                let xy;
+
+                // aggressive mobs attack nearby player
+                let attacked = false;
+                if (mob.aggressive) {
+                    ['n', 'e', 's', 'w'].forEach(function (dir) {
+                        xy = possibleMoves[dir];
+                        let player = game.world.players[xy.x][xy.y];
+                        if (player) {
+                            clients[player.id].emit('hit', mob.name + ' hits you');
+                            mob.lastAction = timestamp;
+                            attacked = true;
+                        }
+                    });
+                }
+
+                // this mob does not move
+                if (attacked) {
+                    return;
+                }
+
+                // look at 4 directions to see which of them are not blocked by objects, other mobs or players
                 ['n', 'e', 's', 'w'].forEach(function (dir) {
-                    coords = possibleMoves[dir];
-                    if (typeof game.world.objects[coords.x][coords.y] === 'number') {
+                    xy = possibleMoves[dir];
+                    let obj = game.world.objects[xy.x][xy.y];
+                    let mob = game.world.mobs[xy.x][xy.y];
+                    let player = game.world.players[xy.x][xy.y];
+                    if (typeof obj === 'number' || mob || player) {
                         delete possibleMoves[dir];
                     }
                 });
-                namesOfMoves = Object.keys(possibleMoves);
-                numOfMoves = namesOfMoves.length;
+                let namesOfMoves = Object.keys(possibleMoves);
+                let numOfMoves = namesOfMoves.length;
 
-                // if at least one direction is clear, choose randomly
+                // chose one of clear directions
                 if (numOfMoves > 0) {
-                    coords = possibleMoves[namesOfMoves[Math.floor(Math.random() * numOfMoves)]];
-                    delete game.world.npcs[npc.x][npc.y];
-                    npc.x = coords.x;
-                    npc.y = coords.y;
-                    game.world.npcs[npc.x][npc.y] = npc;
+                    // aggressive mob moves towards player
+                    if (mob.aggressive) {
+                        Object.keys(game.players).every(function (pid) {
+                            let player = game.players[pid];
+                            let dist = util.vector(mob, player).norm;
+
+                            // player within mob's radius
+                            if (dist <= mob.radius) {
+                                // find shortest distance from all possible moves
+                                let shortestDist = mob.radius + 1;
+                                namesOfMoves.forEach(function (dir) {
+                                    let xy2 = possibleMoves[dir];
+                                    dist = util.vector(xy2, player).norm;
+
+                                    if (dist < shortestDist) {
+                                        shortestDist = dist;
+                                        xy = xy2;
+                                    }
+                                });
+
+                                return false; // exit loop through players
+                            }
+
+                            return true; // continue loop through players
+                        });
+                    } else {
+                        xy = possibleMoves[namesOfMoves[Math.floor(Math.random() * numOfMoves)]];
+                    }
+                    delete game.world.mobs[mob.x][mob.y];
+                    mob.x = xy.x;
+                    mob.y = xy.y;
+                    game.world.mobs[mob.x][mob.y] = mob;
                 }
                 // in any case, make walk delay until next move attempt
-                npc.lastAction = timestamp;
+                mob.lastAction = timestamp;
             }
         });
 
@@ -70,7 +113,7 @@ function gameServerConstructor(io) {
 
         var state = {
             players: game.players,
-            npcs: game.npcs,
+            mobs: game.mobs,
             world: game.world
         };
 
@@ -85,10 +128,10 @@ function gameServerConstructor(io) {
     // environment update loop
     function updateEnvironment() {
 
-        // new trees grow and wood is broken with probability 10%
+        // new trees grow and wood is broken
         for (let i = 0; i < base.WORLD.WIDTH; i += 1) {
             for (let j = 0; j < base.WORLD.HEIGHT; j += 1) {
-                if (Math.random() < 0.1) {
+                if (Math.random() < 0.02) {
                     if (game.world.objects[i][j] === base.OBJECTS.WOOD) {
                         // wood is broken
                         delete game.world.objects[i][j];
@@ -106,7 +149,7 @@ function gameServerConstructor(io) {
 
 
         // new monsters respawn
-        spawnNpcs();
+        spawnMobs();
 
 
         // update after regularly at given frequency
@@ -144,15 +187,71 @@ function gameServerConstructor(io) {
         return player;
     }
 
-    // function to create random NPC
-    function createNpc() {
-        var npc = {};
-        npc.x = Math.floor(Math.random() * base.WORLD.WIDTH);
-        npc.y = Math.floor(Math.random() * base.WORLD.HEIGHT);
-        npc.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
-        npc.lastAction = Date.now();
-        npc.speed = 1;
-        return npc;
+
+    //
+
+    // Create spawn spawn probability table
+    function createSpawnTable() {
+        // relative frequency
+        let table = [
+            {
+                name: 'Angry sphere',
+                freq: 1
+            },
+            {
+                name: 'Sphere',
+                freq: 1
+            }
+        ];
+
+        // sum of frequencies
+        let sumF = 0;
+        table.forEach(function (mob) {
+            sumF += mob.freq;
+        });
+
+        // cumulative probability
+        let cumP = 0;
+        table.forEach(function (mob) {
+            mob.cumP = cumP + mob.freq / sumF;
+            cumP = mob.cumP;
+        });
+
+        return table;
+    }
+
+    let spawnTable = createSpawnTable();
+
+
+    // function to create random mobs
+    function createMob(id) {
+
+        // draw a random entry from spawnTable
+        let rnd = Math.random();
+        let spawnName = '';
+        spawnTable.every(function (mob) {
+            if (mob.cumP > rnd) {
+                spawnName = mob.name;
+                return false;
+            }
+            return true;
+        });
+
+        if (spawnName === '') {
+            console.log(spawnTable);
+            console.log('rnd = ' + rnd);
+            throw 'Error reading from spawn table'
+        }
+
+        let mob = Object.create(MOBS[spawnName]);
+        mob.name = spawnName;
+        mob.x = Math.floor(Math.random() * base.WORLD.WIDTH);
+        mob.y = Math.floor(Math.random() * base.WORLD.HEIGHT);
+        mob.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
+        mob.lastAction = Date.now();
+        mob.id = id;
+
+        return mob;
     }
 
 
@@ -181,33 +280,17 @@ function gameServerConstructor(io) {
 
 
 
-    // create an instance of the game and read  map
-    server.createGame = function () {
 
-        readMap();
+    // spawned mobs counter = id
+    let nextMobId = 0;
 
-        // grids for locations of npcs, players and loot bags
-        game.world.npcs = [];
-        game.world.players = [];
-        game.world.bags = [];
-        for (let i = 0; i < base.WORLD.WIDTH; i += 1) {
-            game.world.npcs[i] = [];
-            game.world.players[i] = [];
-            game.world.bags[i] = [];
-        }
-
-        spawnNpcs();
-
-        console.log('game created');
-
-    };
-
-
-    function spawnNpcs() {
-        for (let i = game.npcs.length; i < WORLD.NPC_LIMIT; i += 1) {
-            let npc = createNpc();
-            game.npcs.push(npc);
-            game.world.npcs[npc.x][npc.y] = npc;
+    function spawnMobs() {
+        let mobIds = Object.keys(game.mobs);
+        for (let i = mobIds.length; i < WORLD.MOB_LIMIT; i += 1) {
+            let mob = createMob(nextMobId);
+            game.mobs[nextMobId] = mob;
+            game.world.mobs[mob.x][mob.y] = mob;
+            nextMobId += 1;
         }
     }
 
@@ -218,6 +301,7 @@ function gameServerConstructor(io) {
     function addPlayer(client) {
         clients[client.id] = client;
         let player = createPlayer();
+        player.id = client.id;
         game.players[client.id] = player;
         game.world.players[player.x][player.y] = player;
         var playersCount = Object.keys(game.players).length;
@@ -290,31 +374,32 @@ function gameServerConstructor(io) {
 
                     util.wrapOverWorld(newPos);
 
-                    const obj = game.world.objects[newPos.x][newPos.y];
-                    const npc = game.world.npcs[newPos.x][newPos.y];
+                    let obj = game.world.objects[newPos.x][newPos.y];
+                    let mob = game.world.mobs[newPos.x][newPos.y];
 
-                    if (npc) {
-                        // attack if there is npc at destination
-                        const npcIndex = game.npcs.indexOf(npc);
-                        game.npcs.splice(npcIndex, 1);
-                        delete game.world.npcs[newPos.x][newPos.y];
-                        const item = common.base.ITEMS.LEATHER;
+                    if (mob) {
+                        // attack if there is mob at destination
+                        delete game.mobs[mob.id];
+                        delete game.world.mobs[newPos.x][newPos.y];
+                        let item = common.base.ITEMS.LEATHER;
                         player.inventory.push(item);
                         client.emit('addItem', item);
-                        client.emit('hit', 'You hit the monster')
+                        client.emit('hit', 'You hit ' + mob.name);
 
                     } else if (typeof obj === 'number') {
                         // interact if there is object at destination
                         if (obj === base.OBJECTS.TREE || obj === base.OBJECTS.PALM || obj === base.OBJECTS.WOOD) {
-                            const item = common.base.ITEMS.WOOD;
+                            let item = common.base.ITEMS.WOOD;
                             delete game.world.objects[newPos.x][newPos.y];
                             player.inventory.push(item);
                             client.emit('addItem', item);
                         }
                     } else {
                         // walk if there is no object at destination
+                        delete game.world.players[player.x][player.y];
                         player.x = newPos.x;
                         player.y = newPos.y;
+                        game.world.players[player.x][player.y] = player;
                     }
                 } else if (key === 'a') { // action
                     if (typeof game.world.objects[player.x][player.y] !== 'number') {
@@ -344,10 +429,32 @@ function gameServerConstructor(io) {
 
     });
 
-    return server;
+
+    // -------------------------------------------------------------
+    // Start game server
+    // -------------------------------------------------------------
+    (function startServer() {
+
+        readMap();
+
+        // grids for locations of mobs, players and loot bags
+        game.world.mobs = [];
+        game.world.players = [];
+        game.world.bags = [];
+        for (let i = 0; i < base.WORLD.WIDTH; i += 1) {
+            game.world.mobs[i] = [];
+            game.world.players[i] = [];
+            game.world.bags[i] = [];
+        }
+
+        spawnMobs();
+
+        console.log('Server start successful');
+
+    }());
 
 }
 
 
 
-module.exports = gameServerConstructor;
+module.exports = gameServer;

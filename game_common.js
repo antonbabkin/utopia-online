@@ -17,7 +17,7 @@ function commonConstructor() {
     // empty game object
     common.game = {
         players: {},
-        npcs: [],
+        mobs: {},
         world: {}
     };
 
@@ -41,6 +41,10 @@ function commonConstructor() {
     common.base.WORLD = {
         WIDTH: 20,
         HEIGHT: 20
+    };
+    common.base.WORLD.SIZE = {
+        x: common.base.WORLD.WIDTH,
+        y: common.base.WORLD.HEIGHT
     };
 
      // visible part of the map
@@ -82,12 +86,30 @@ function commonConstructor() {
     common.base.ITEMS = {
         WOOD: 0,
         LEATHER: 1
-    }
+    };
 
     // inventory images
     common.base.ITEMS_IMAGES = {};
     common.base.ITEMS_IMAGES[common.base.ITEMS.WOOD] = 'wood';
     common.base.ITEMS_IMAGES[common.base.ITEMS.LEATHER] = 'leather';
+
+    // -------------------------
+    // Mobs database
+    // -------------------------
+    common.mobs = {};
+
+    common.mobs['Sphere'] = {
+        image: 'sphere',
+        aggressive: false,
+        speed: 1
+    };
+
+    common.mobs['Angry sphere'] = {
+        image: 'angry_sphere',
+        aggressive: true,
+        speed: 2,
+        radius: 10
+    };
 
 
     // -------------------------
@@ -132,6 +154,33 @@ function commonConstructor() {
             s: common.util.wrapOverWorld(common.util.coordsOffset(coords, 0, 1)),
             w: common.util.wrapOverWorld(common.util.coordsOffset(coords, -1, 0))
         };
+    };
+
+    // vector from point A to point B
+    common.util.vector = function(a, b) {
+        var vec = {};
+        ['x', 'y'].forEach(function (axis) {
+            var ba1, ba2, wrap;
+            if (typeof a[axis] !== 'number' || typeof b[axis] !== 'number') {
+                console.log(a);
+                console.log(b);
+                throw 'Non-coordinate argument passed to util.vector(a, b)'
+            }
+            ba1 = b[axis] - a[axis];
+            wrap = common.base.WORLD.SIZE[axis];
+            if (ba1 > 0) {
+                wrap *= -1;
+            }
+            ba2 = ba1 + wrap;
+            if (Math.abs(ba1) < Math.abs(ba2)) {
+                vec[axis] = ba1;
+            } else {
+                vec[axis] = ba2;
+            }
+        });
+
+        vec.norm = Math.abs(vec.x) + Math.abs(vec.y);
+        return vec;
     };
 
 

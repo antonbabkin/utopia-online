@@ -22,6 +22,7 @@ window.addEventListener('load', function clientLoader() {
     game.viewport = {};
     var base = common.base;
     var util = common.util;
+    var MOBS = common.mobs;
 
     var stage = new PIXI.Stage(0xc8f040);
 
@@ -76,13 +77,20 @@ window.addEventListener('load', function clientLoader() {
     ui.panel.appendChild(ui.inventory.div);
 
     // -------------------------
+    // Audio
+    // -------------------------
+    var snd = {
+        hit: new Audio('public/hit.mp3')
+    };
+
+    // -------------------------
     // PIXI assets
     // -------------------------
     var textures = {
         ground: {},
         objects: {},
         hero: PIXI.Texture.fromImage('public/hero.png'),
-        npc: PIXI.Texture.fromImage('public/sphere.png')
+        mobs: {}
     };
 
     textures.ground[base.GROUNDS.GRASS] = PIXI.Texture.fromImage('public/grass.png');
@@ -91,7 +99,9 @@ window.addEventListener('load', function clientLoader() {
     textures.objects[base.OBJECTS.PALM] = PIXI.Texture.fromImage('public/palm.png');
     textures.objects[base.OBJECTS.ROCK] = PIXI.Texture.fromImage('public/rock.png');
     textures.objects[base.OBJECTS.WOOD] = PIXI.Texture.fromImage('public/wood.png');
-
+    Object.keys(MOBS).forEach(function (name) {
+        textures.mobs[name] = PIXI.Texture.fromImage('public/' + MOBS[name].image +'.png');
+    });
 
     // collection of character sprites
     var sprites = {};
@@ -119,7 +129,7 @@ window.addEventListener('load', function clientLoader() {
 
     socket.on('world_update', function onWorldUpdate(state) {
         game.players = state.players || game.players;
-        game.npcs = state.npcs || game.npcs;
+        game.mobs = state.mobs || game.mobs;
         game.world = state.world || game.world;
     });
 
@@ -136,7 +146,8 @@ window.addEventListener('load', function clientLoader() {
         ui.inventory.update();
     });
 
-    socket.on('hit', function onRemoveItem(msg) {
+    socket.on('hit', function onHit(msg) {
+        snd.hit.play();
         console.log(msg);
     });
 
@@ -180,7 +191,7 @@ window.addEventListener('load', function clientLoader() {
             return;
         }
 
-        var i, j, c, s;
+        var i, j, tile, sprite;
 
 
         // world coords of the top-left corner of the viewport
@@ -191,7 +202,7 @@ window.addEventListener('load', function clientLoader() {
         util.wrapOverWorld(game.viewport.corner);
 
         // world coords of the current viewport tile
-        var cur = {};
+        var xy = {};
 
         // ground and objects
         sprites.ground = sprites.ground || [];
@@ -199,46 +210,44 @@ window.addEventListener('load', function clientLoader() {
         for (i = 0; i < base.VIEWPORT.WIDTH; i += 1) {
             sprites.ground[i] = sprites.ground[i] || [];
             sprites.objects[i] = sprites.objects[i] || [];
-
-            cur.x = game.viewport.corner.x + i;
+            xy.x = game.viewport.corner.x + i;
 
             for (j = 0; j < base.VIEWPORT.HEIGHT; j += 1) {
+                xy.y = game.viewport.corner.y + j;
+                util.wrapOverWorld(xy);
 
-                cur.y = game.viewport.corner.y + j;
-                util.wrapOverWorld(cur);
+                // create or update ground sprites
+                tile = game.world.ground[xy.x][xy.y];
+                sprite = sprites.ground[i][j];
 
-
-                c = game.world.ground[cur.x][cur.y];
-                s = sprites.ground[i][j];
-
-                if (typeof s !== 'object') {
-                    s = new PIXI.Sprite(textures.ground[c]);
-                    s.position.x = i * base.TILE.WIDTH;
-                    s.position.y = j * base.TILE.HEIGHT;
-                    stage.addChild(s);
-                    sprites.ground[i][j] = s;
+                if (typeof sprite !== 'object') {
+                    sprite = new PIXI.Sprite(textures.ground[tile]);
+                    sprite.position.x = i * base.TILE.WIDTH;
+                    sprite.position.y = j * base.TILE.HEIGHT;
+                    stage.addChild(sprite);
+                    sprites.ground[i][j] = sprite;
                 } else {
-                    s.texture = textures.ground[c];
+                    sprite.texture = textures.ground[tile];
                 }
 
+                // create or update object sprites
+                tile = game.world.objects[xy.x][xy.y];
+                sprite = sprites.objects[i][j];
 
-                c = game.world.objects[cur.x][cur.y];
-                s = sprites.objects[i][j];
-
-                if (typeof c !== 'number') {
-                    if (typeof s === 'object') {
+                if (typeof tile !== 'number') {
+                    if (typeof sprite === 'object') {
                         stage.removeChild(sprites.objects[i][j]);
                         delete sprites.objects[i][j];
                     }
                 } else {
-                    if (typeof s !== 'object') {
-                        s = new PIXI.Sprite(textures.objects[c]);
-                        s.position.x = i * base.TILE.WIDTH;
-                        s.position.y = j * base.TILE.HEIGHT;
-                        stage.addChild(s);
-                        sprites.objects[i][j] = s;
+                    if (typeof sprite !== 'object') {
+                        sprite = new PIXI.Sprite(textures.objects[tile]);
+                        sprite.position.x = i * base.TILE.WIDTH;
+                        sprite.position.y = j * base.TILE.HEIGHT;
+                        stage.addChild(sprite);
+                        sprites.objects[i][j] = sprite;
                     } else {
-                        s.texture = textures.objects[c];
+                        sprite.texture = textures.objects[tile];
                     }
                 }
 
@@ -251,66 +260,57 @@ window.addEventListener('load', function clientLoader() {
         sprites.players = sprites.players || {};
 
         // add new / update
-        for (i in game.players) {
-            if (game.players.hasOwnProperty(i)) {
-                c = game.players[i];
-                s = sprites.players[i];
+        Object.keys(game.players).forEach(function (id) {
+            var player = game.players[id];
+            var sprite = sprites.players[id];
 
-                if (typeof s !== 'object') {
-                    s = new PIXI.Sprite(textures.hero);
-                    s.tint = c.tint;
-                    stage.addChild(s);
-                    sprites.players[i] = s;
-                }
-
-                cur = worldToViewport(c);
-                s.position.x = cur.x * base.TILE.WIDTH;
-                s.position.y = cur.y * base.TILE.HEIGHT;
+            if (typeof sprite !== 'object') {
+                sprite = new PIXI.Sprite(textures.hero);
+                sprite.tint = player.tint;
+                stage.addChild(sprite);
+                sprites.players[id] = sprite;
             }
-        }
+
+            var xy = worldToViewport(player);
+            sprite.position.x = xy.x * base.TILE.WIDTH;
+            sprite.position.y = xy.y * base.TILE.HEIGHT;
+        });
 
         // remove old
-        for (i in sprites.players) {
-            if (sprites.players.hasOwnProperty(i)) {
-                if (typeof game.players[i] !== 'object' && typeof sprites.players[i] === 'object') {
-                    stage.removeChild(sprites.players[i]);
-                    delete sprites.players[i];
-                }
+        Object.keys(sprites.players).forEach(function (id) {
+            if (typeof game.players[id] !== 'object') {
+                stage.removeChild(sprites.players[id]);
+                delete sprites.players[id];
             }
-        }
+        });
 
-        // NPCs
-        sprites.npcs = sprites.npcs || {};
+        // mobs
+        sprites.mobs = sprites.mobs || {};
 
         // add new / update
-        for (i in game.npcs) {
-            if (game.npcs.hasOwnProperty(i)) {
-                c = game.npcs[i];
-                s = sprites.npcs[i];
+        Object.keys(game.mobs).forEach(function (id) {
+            var mob = game.mobs[id];
+            var sprite = sprites.mobs[id];
 
-
-                if (typeof s !== 'object') {
-                    s = new PIXI.Sprite(textures.npc);
-                    s.tint = c.tint;
-                    stage.addChild(s);
-                    sprites.npcs[i] = s;
-                }
-
-                cur = worldToViewport(c);
-                s.position.x = cur.x * base.TILE.WIDTH;
-                s.position.y = cur.y * base.TILE.HEIGHT;
+            if (typeof sprite !== 'object') {
+                sprite = new PIXI.Sprite(textures.mobs[mob.name]);
+                sprite.tint = mob.tint;
+                stage.addChild(sprite);
+                sprites.mobs[id] = sprite;
             }
-        }
+
+            var xy = worldToViewport(mob);
+            sprite.position.x = xy.x * base.TILE.WIDTH;
+            sprite.position.y = xy.y * base.TILE.HEIGHT;
+        });
 
         // remove old
-        for (i in sprites.npcs) {
-            if (sprites.npcs.hasOwnProperty(i)) {
-                if (typeof game.npcs[i] !== 'object' && typeof sprites.npcs[i] === 'object') {
-                    stage.removeChild(sprites.npcs[i]);
-                    delete sprites.npcs[i];
-                }
+        Object.keys(sprites.mobs).forEach(function (id) {
+            if (typeof game.mobs[id] !== 'object') {
+                stage.removeChild(sprites.mobs[id]);
+                delete sprites.mobs[id];
             }
-        }
+        });
     }
 
 
@@ -359,7 +359,7 @@ window.addEventListener('load', function clientLoader() {
 
     // Update latency and FPS every second
     function debugUpdate() {
-        uiDebug.innerHTML = 'FPS: ' + Math.round(fps) + ', latency: ' + latency;
+        uiDebug.innerHTML = 'FPS: ' + Math.round(fps) + ', latency (2-way): ' + latency;
         setTimeout(debugUpdate, 1000);
     }
 
