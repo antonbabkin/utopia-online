@@ -19,105 +19,20 @@ function gameServer(io) {
     var util = common.util;
     var MOBS = common.mobs;
 
-
+    // Constants that should not be visible to players
     var WORLD = {
-        MOB_LIMIT: 6 // max number of mobs in the world
+        MOB_LIMIT: 1 // max number of mobs in the world
     };
 
 
     // server main update loop
     function update() {
 
-        // Mobs actions: moves, attacks
-        let timestamp = Date.now();
-        Object.keys(game.mobs).forEach(function (id) {
-            let mob = game.mobs[id];
-            if (mob.lastAction + base.ACTION_DELAY / mob.speed < timestamp) {
-                let possibleMoves = util.coordsAround(mob);
-                let xy;
-
-                // aggressive mobs attack nearby player
-                let attacked = false;
-                if (mob.aggressive) {
-                    ['n', 'e', 's', 'w'].forEach(function (dir) {
-                        xy = possibleMoves[dir];
-                        let player = game.world.players[xy.x][xy.y];
-                        if (player) {
-                            clients[player.id].emit('hit', mob.name + ' hits you');
-                            mob.lastAction = timestamp;
-                            attacked = true;
-                        }
-                    });
-                }
-
-                // this mob does not move
-                if (attacked) {
-                    return;
-                }
-
-                // look at 4 directions to see which of them are not blocked by objects, other mobs or players
-                ['n', 'e', 's', 'w'].forEach(function (dir) {
-                    xy = possibleMoves[dir];
-                    let obj = game.world.objects[xy.x][xy.y];
-                    let mob = game.world.mobs[xy.x][xy.y];
-                    let player = game.world.players[xy.x][xy.y];
-                    if (typeof obj === 'number' || mob || player) {
-                        delete possibleMoves[dir];
-                    }
-                });
-                let namesOfMoves = Object.keys(possibleMoves);
-                let numOfMoves = namesOfMoves.length;
-
-                // chose one of clear directions
-                if (numOfMoves > 0) {
-                    // aggressive mob moves towards player
-                    if (mob.aggressive) {
-                        Object.keys(game.players).every(function (pid) {
-                            let player = game.players[pid];
-                            let dist = util.vector(mob, player).norm;
-
-                            // player within mob's radius
-                            if (dist <= mob.radius) {
-                                // find shortest distance from all possible moves
-                                let shortestDist = mob.radius + 1;
-                                namesOfMoves.forEach(function (dir) {
-                                    let xy2 = possibleMoves[dir];
-                                    dist = util.vector(xy2, player).norm;
-
-                                    if (dist < shortestDist) {
-                                        shortestDist = dist;
-                                        xy = xy2;
-                                    }
-                                });
-
-                                return false; // exit loop through players
-                            }
-
-                            return true; // continue loop through players
-                        });
-                    } else {
-                        xy = possibleMoves[namesOfMoves[Math.floor(Math.random() * numOfMoves)]];
-                    }
-                    delete game.world.mobs[mob.x][mob.y];
-                    mob.x = xy.x;
-                    mob.y = xy.y;
-                    game.world.mobs[mob.x][mob.y] = mob;
-                }
-                // in any case, make walk delay until next move attempt
-                mob.lastAction = timestamp;
-            }
-        });
-
-
-
-
         var state = {
             players: game.players,
             mobs: game.mobs,
             world: game.world
         };
-
-
 
         io.emit('world_update', state);
 
@@ -171,7 +86,7 @@ function gameServer(io) {
             console.log('---- map.json saved successfully');
         });
 
-        setTimeout(saveServer, 60 * 1000);
+        setTimeout(saveServer, 5 * 60 * 1000);
     }
 
 
@@ -220,11 +135,11 @@ function gameServer(io) {
         return table;
     }
 
-    let spawnTable = createSpawnTable();
+    let worldSpawnTable = createSpawnTable();
 
 
     // function to create random mobs
-    function createMob(id) {
+    function createMob(id, spawnTable) {
 
         // draw a random entry from spawnTable
         let rnd = Math.random();
@@ -248,8 +163,125 @@ function gameServer(io) {
         mob.x = Math.floor(Math.random() * base.WORLD.WIDTH);
         mob.y = Math.floor(Math.random() * base.WORLD.HEIGHT);
         mob.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
-        mob.lastAction = Date.now();
         mob.id = id;
+
+
+        // private properties and methods
+        let actionDelay = base.ACTION_DELAY / mob.speed;
+
+        // find empty walkable tiles around self
+        function findEmptyTilesAround() {
+            let emptyTiles = util.coordsAround(mob);
+
+            Object.keys(emptyTiles).forEach(function (dir) {
+                let xy = emptyTiles[dir];
+                let obj = game.world.objects[xy.x][xy.y];
+                let mob = game.world.mobs[xy.x][xy.y];
+                let player = game.world.players[xy.x][xy.y];
+                if (typeof obj === 'number' || mob || player) {
+                    delete emptyTiles[dir];
+                }
+            });
+
+            return emptyTiles;
+        }
+
+        // move to specified tile
+        function moveTo(destination) {
+            delete game.world.mobs[mob.x][mob.y];
+            mob.x = destination.x;
+            mob.y = destination.y;
+            game.world.mobs[destination.x][destination.y] = mob;
+        }
+
+        // move randomly to one of empty tiles around self
+        function moveRandom() {
+            let moves = findEmptyTilesAround();
+            let names = Object.keys(moves);
+            let number = names.length;
+
+            if (number > 0) {
+                // choose random direction
+                let newPos = moves[names[Math.floor(Math.random() * number)]];
+                moveTo(newPos);
+            }
+        }
+
+        // move 1 tile towards specified destination
+        // naive path-finding algorithm
+        function moveTowards(destination) {
+            let shortestDistance = util.vector(mob, destination).norm;
+            let stayOnTile = true; // if all possible moves lead away from destination, don't move
+            let newPos;
+
+            // loop through possible moves and select the one closest to destination
+            let moves = findEmptyTilesAround();
+            Object.keys(moves).forEach(function (dir) {
+                let xy = moves[dir];
+                let distance = util.vector(xy, destination).norm;
+                if (distance < shortestDistance) {
+                    shortestDistance = distance;
+                    newPos = xy;
+                    stayOnTile = false;
+                }
+            });
+
+            if (!stayOnTile) {
+                moveTo(newPos);
+            }
+        }
+
+        // choose and perform an action: move or attack
+        function action() {
+
+            if (mob.aggressive) {
+                // attack if there is a player nearby
+                let around = util.coordsAround(mob);
+                let noAttack = Object.keys(around).every(function (dir) {
+                    let xy = around[dir];
+                    let player = game.world.players[xy.x][xy.y];
+                    if (player) {
+                        clients[player.id].emit('hit', mob.name + ' hits you');
+                        return false; // break .every loop
+                    } else {
+                        return true; // continue .every loop
+                    }
+                });
+
+                if (noAttack) {
+                    // move to the first player found within mob's radius
+                    let noPlayerInRadius = Object.keys(game.players).every(function (pid) {
+                        let player = game.players[pid];
+                        let distance = util.vector(mob, player).norm;
+                        if (distance <= mob.radius) {
+                            moveTowards(player);
+                            return false; // exit .every loop
+                        }
+                        return true; // continue .every loop
+                    });
+                    if (noPlayerInRadius) {
+                        moveRandom();
+                    }
+                }
+
+            } else { // non-aggressive mob
+                moveRandom();
+            }
+        }
+
+        // start action loop when mob is created
+        let actionTimer = setTimeout(actionLoop, actionDelay);
+        function actionLoop() {
+            action();
+            actionTimer = setTimeout(actionLoop, actionDelay);
+        }
+
+        // interrupt action loop
+        function destroy() {
+            clearTimeout(actionTimer);
+        }
+
+        mob.destroy = destroy;
 
         return mob;
     }
@@ -287,7 +319,7 @@ function gameServer(io) {
     function spawnMobs() {
         let mobIds = Object.keys(game.mobs);
         for (let i = mobIds.length; i < WORLD.MOB_LIMIT; i += 1) {
-            let mob = createMob(nextMobId);
+            let mob = createMob(nextMobId, worldSpawnTable);
             game.mobs[nextMobId] = mob;
             game.world.mobs[mob.x][mob.y] = mob;
             nextMobId += 1;
@@ -379,6 +411,7 @@ function gameServer(io) {
 
                     if (mob) {
                         // attack if there is mob at destination
+                        mob.destroy();
                         delete game.mobs[mob.id];
                         delete game.world.mobs[newPos.x][newPos.y];
                         let item = common.base.ITEMS.LEATHER;

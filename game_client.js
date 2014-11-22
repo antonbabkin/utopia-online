@@ -76,6 +76,16 @@ window.addEventListener('load', function clientLoader() {
     ui.inventory.div.appendChild(ui.inventory.p);
     ui.panel.appendChild(ui.inventory.div);
 
+
+    ui.controls = {
+        mute: false,
+        sndPlay: function (snd) {
+            if (!ui.controls.mute) {
+                snd.play();
+            }
+        }
+    }
+
     // -------------------------
     // Audio
     // -------------------------
@@ -147,7 +157,7 @@ window.addEventListener('load', function clientLoader() {
     });
 
     socket.on('hit', function onHit(msg) {
-        snd.hit.play();
+        ui.controls.sndPlay(snd.hit);
         console.log(msg);
     });
 
