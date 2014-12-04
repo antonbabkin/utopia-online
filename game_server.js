@@ -6,79 +6,123 @@
 'use strict';
 
 
+
 function gameServer(io) {
 
-    var fs = require('fs');
+    let fs = require('fs');
+    let base = require('./base.js');
+    let utils = require('./utils.js');
 
-    var clients = {};
+    // grid of map coordinates that works as a reference to all objects, players, mobs, bags and grounds
+    // coordinates are of form grid[x][y], i.e. (column, row)
+    let grid = [];
+    for (let x = 0; x < base.constants.world.width; x += 1) {
+        grid[x] = [];
+        for (let y = 0; y < base.constants.world.height; y += 1) {
+            grid[x][y] = {};
+        }
+    }
 
-    // module of common objects shared with client
-    var common = require('./game_common.js');
-    var game = common.game;
-    var base = common.base;
-    var util = common.util;
-    var MOBS = common.mobs;
-
-    // Constants that should not be visible to players
-    var WORLD = {
-        MOB_LIMIT: 1 // max number of mobs in the world
-    };
+    // Players and mobs from the grid are also referenced in these two lists.
+    // These lists help to access players/mobs by their ID and to loop through them quickly
+    let players = {};
+    let mobs = {};
 
 
-    // server main update loop
-    function update() {
+    // -------------------------------------------------------------
+    // Start game server
+    // -------------------------------------------------------------
 
-        var state = {
-            players: game.players,
-            mobs: game.mobs,
-            world: game.world
-        };
+    // spawned mobs counter = id
+    let nextMobId = 0;
+    let worldSpawnTable = createSpawnTable();
 
-        io.emit('world_update', state);
+    readMap();
 
-        setTimeout(update, 100);
+    spawnMobs();
+
+    console.log('Server started');
+
+    // -------------------------------------------------------------
+    // Function definitions
+    // -------------------------------------------------------------
+
+    // Helper functions to add, remove and move chars on grid:
+    // update grid and corresponding list
+    function addToGrid(char) {
+        grid[char.x][char.y].char = char;
+        if (char.type === base.constants.charTypes.player) {
+            players[char.id] = char;
+        } else if (char.type === base.constants.charTypes.mob) {
+            mobs[char.id] = char;
+        }
+    }
+
+    function removeFromGrid(char) {
+        delete grid[char.x][char.y].char;
+        if (char.type === base.constants.charTypes.player) {
+            delete players[char.id];
+        } else if (char.type === base.constants.charTypes.mob) {
+            delete mobs[char.id];
+        }
+    }
+
+    function moveOnGrid(char, destination) {
+        delete grid[char.x][char.y].char;
+        char.x = destination.x;
+        char.y = destination.y;
+        grid[char.x][char.y].char = char;
     }
 
 
-    // environment update loop
-    function updateEnvironment() {
 
-        // new trees grow and wood is broken
-        for (let i = 0; i < base.WORLD.WIDTH; i += 1) {
-            for (let j = 0; j < base.WORLD.HEIGHT; j += 1) {
-                if (Math.random() < 0.02) {
-                    if (game.world.objects[i][j] === base.OBJECTS.WOOD) {
-                        // wood is broken
-                        delete game.world.objects[i][j];
-                    } else if (typeof game.world.objects[i][j] !== 'number') {
-                        // tree grows
-                        if (game.world.ground[i][j] === base.GROUNDS.GRASS) {
-                            game.world.objects[i][j] = base.OBJECTS.TREE;
-                        } else if (game.world.ground[i][j] === base.GROUNDS.SAND) {
-                            game.world.objects[i][j] = base.OBJECTS.PALM;
-                        }
+    // Load ground and object data from disk into grid cells
+    // and start server loops upon completion
+    function readMap() {
+        fs.readFile('map.json', 'utf8', function (err, data) {
+            if (err) {
+                console.error('Failed to read map.json');
+                console.log(err);
+            }
+
+            console.log('map.json read successfully');
+            let map = JSON.parse(data);
+            for (let x = 0; x < base.constants.world.width; x += 1) {
+                for (let y = 0; y < base.constants.world.height; y += 1) {
+                    grid[x][y].ground = map[x][y].ground;
+                    if (typeof map[x][y].object === 'number') {
+                        grid[x][y].object = map[x][y].object;
                     }
                 }
             }
-        }
 
-
-        // new monsters respawn
-        spawnMobs();
-
-
-        // update after regularly at given frequency
-        setTimeout(updateEnvironment, 60 * 1000);
+            // after map is loaded, start server update loops
+            setTimeout(update, base.constants.stateUpdateTime);
+            setTimeout(saveServer, base.constants.serverSaveTime);
+            setTimeout(updateEnvironment, base.constants.environmentUpdateTime);
+        });
     }
 
-
-    // write server state to the disk every minute
+    // write server state to the disk at regular time
     function saveServer() {
 
         console.log('Server backup: ', Date());
 
         // save ground and objects into map.json
-        fs.writeFile('map.json', JSON.stringify(game.world), function (err) {
+        let map = [];
+
+        grid.forEach(function (column, x) {
+            map[x] = [];
+            column.forEach(function (cell, y) {
+                map[x][y] = {};
+                map[x][y].ground = cell.ground;
+                if (typeof cell.object === 'number') {
+                    map[x][y].object = cell.object;
+                }
+            });
+        });
+
+        fs.writeFile('map.json', JSON.stringify(map), function (err) {
             if (err) {
                 console.error('Failed to write generated map to map.json');
                 console.log(err);
@@ -86,24 +130,54 @@ function gameServer(io) {
             console.log('---- map.json saved successfully');
         });
 
-        setTimeout(saveServer, 5 * 60 * 1000);
+        setTimeout(saveServer, base.constants.serverSaveTime);
     }
 
+    // server state update loop
+    function update() {
+        // todo: each player gets a limited chunk of grid around him
+        Object.keys(players).forEach(function (pid) {
+            let player = players[pid];
+            let state = {
+                grid: grid,
+                self: {
+                    x: player.x,
+                    y: player.y
+                }
+            };
+            try {
+                player.emit('world_update', state);
+            } catch (e) {
+                console.log('update fail: ' + e);
+            }
+        });
 
-    // return a player with random characteristics
-    function createPlayer() {
-        var player = {};
-        player.x = Math.floor(Math.random() * base.WORLD.WIDTH);
-        player.y = Math.floor(Math.random() * base.WORLD.HEIGHT);
-        player.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
-        player.lastAction = Date.now();
-        player.speed = 5;
-        player.inventory = [];
-        return player;
+        setTimeout(update, base.constants.stateUpdateTime);
     }
 
+    // environment update loop
+    function updateEnvironment() {
+        // new trees grow and wood is broken
+        grid.forEach(function (column) {
+            column.forEach(function (cell) {
+                if (cell.object === null && Math.random() < 0.02) {
+                    if (cell.ground === base.grounds.grass) {
+                        cell.object = base.objects.tree;
+                    } else if (cell.ground === base.grounds.sand) {
+                        cell.object = base.objects.palm;
+                    }
+                } else if (cell.object === base.objects.wood && Math.random() < 0.02) {
+                    delete cell.object;
+                }
+            });
+        });
 
-    //
+        // new monsters respawn
+        spawnMobs();
+
+        // update after regularly at given frequency
+        setTimeout(updateEnvironment, base.constants.environmentUpdateTime);
+    }
 
     // Create spawn spawn probability table
     function createSpawnTable() {
@@ -135,12 +209,9 @@ function gameServer(io) {
         return table;
     }
 
-    let worldSpawnTable = createSpawnTable();
-
-
-    // function to create random mobs
-    function createMob(id, spawnTable) {
-
+    // Create random mob from spawn probability table
+    function createMob(spawnTable) {
+        // todo: change mob indexing to work through integer ID's instead of names
         // draw a random entry from spawnTable
         let rnd = Math.random();
         let spawnName = '';
@@ -153,32 +224,35 @@ function gameServer(io) {
         });
 
         if (spawnName === '') {
-            console.log(spawnTable);
-            console.log('rnd = ' + rnd);
-            throw 'Error reading from spawn table'
+            console.error('Failed to get mob name from spawn table (rnd = ' + rnd + '):\n' + spawnTable);
+            return;
         }
 
-        let mob = Object.create(MOBS[spawnName]);
-        mob.name = spawnName;
-        mob.x = Math.floor(Math.random() * base.WORLD.WIDTH);
-        mob.y = Math.floor(Math.random() * base.WORLD.HEIGHT);
+        let x, y, cellEmpty;
+        do {
+            x = Math.floor(Math.random() * base.constants.world.width);
+            y = Math.floor(Math.random() * base.constants.world.height);
+            cellEmpty = (typeof grid[x][y].char === 'undefined');
+            // can still spawn on top of objects
+        } while (!cellEmpty);
+
+        let mob = Object.create(base.mobs[spawnName]);
+        mob.type = base.constants.charTypes.mob;
+        mob.x = x;
+        mob.y = y;
+        mob.name = spawnName; // rewrite property from database, so it becomes own property and is transferred to clients
         mob.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
-        mob.id = id;
 
-
-        // private properties and methods
-        let actionDelay = base.ACTION_DELAY / mob.speed;
+        let actionDelay = base.constants.actionDelay / mob.speed;
 
         // find empty walkable tiles around self
         function findEmptyTilesAround() {
-            let emptyTiles = util.coordsAround(mob);
+            let emptyTiles = utils.coordsAround(mob);
 
             Object.keys(emptyTiles).forEach(function (dir) {
                 let xy = emptyTiles[dir];
-                let obj = game.world.objects[xy.x][xy.y];
-                let mob = game.world.mobs[xy.x][xy.y];
-                let player = game.world.players[xy.x][xy.y];
-                if (typeof obj === 'number' || mob || player) {
+                if (typeof grid[xy.x][xy.y].object !== 'undefined'
+                    || typeof grid[xy.x][xy.y].char !== 'undefined') {
                     delete emptyTiles[dir];
                 }
             });
@@ -186,31 +260,23 @@ function gameServer(io) {
             return emptyTiles;
         }
 
-        // move to specified tile
-        function moveTo(destination) {
-            delete game.world.mobs[mob.x][mob.y];
-            mob.x = destination.x;
-            mob.y = destination.y;
-            game.world.mobs[destination.x][destination.y] = mob;
-        }
-
         // move randomly to one of empty tiles around self
         function moveRandom() {
             let moves = findEmptyTilesAround();
             let names = Object.keys(moves);
-            let number = names.length;
+            let count = names.length;
 
-            if (number > 0) {
+            if (count > 0) {
                 // choose random direction
-                let newPos = moves[names[Math.floor(Math.random() * number)]];
-                moveTo(newPos);
+                let newPos = moves[names[Math.floor(Math.random() * count)]];
+                moveOnGrid(mob, newPos);
             }
         }
 
         // move 1 tile towards specified destination
         // naive path-finding algorithm
         function moveTowards(destination) {
-            let shortestDistance = util.vector(mob, destination).norm;
+            let shortestDistance = utils.vector(mob, destination).norm;
             let stayOnTile = true; // if all possible moves lead away from destination, don't move
             let newPos;
 
@@ -218,7 +284,7 @@ function gameServer(io) {
             let moves = findEmptyTilesAround();
             Object.keys(moves).forEach(function (dir) {
                 let xy = moves[dir];
-                let distance = util.vector(xy, destination).norm;
+                let distance = utils.vector(xy, destination).norm;
                 if (distance < shortestDistance) {
                     shortestDistance = distance;
                     newPos = xy;
@@ -227,21 +293,20 @@ function gameServer(io) {
             });
 
             if (!stayOnTile) {
-                moveTo(newPos);
+                moveOnGrid(mob, newPos);
             }
         }
 
         // choose and perform an action: move or attack
         function action() {
-
             if (mob.aggressive) {
                 // attack if there is a player nearby
-                let around = util.coordsAround(mob);
+                let around = utils.coordsAround(mob);
                 let noAttack = Object.keys(around).every(function (dir) {
                     let xy = around[dir];
-                    let player = game.world.players[xy.x][xy.y];
-                    if (player) {
-                        clients[player.id].emit('hit', mob.name + ' hits you');
+                    let other = grid[xy.x][xy.y].char;
+                    if (typeof other !== 'undefined' && other.type === base.constants.charTypes.player) {
+                        other.emit('hit', mob.name + ' hits you');
                         return false; // break .every loop
                     } else {
                         return true; // continue .every loop
@@ -250,9 +315,9 @@ function gameServer(io) {
 
                 if (noAttack) {
                     // move to the first player found within mob's radius
-                    let noPlayerInRadius = Object.keys(game.players).every(function (pid) {
-                        let player = game.players[pid];
-                        let distance = util.vector(mob, player).norm;
+                    let noPlayerInRadius = Object.keys(players).every(function (pid) {
+                        let player = players[pid];
+                        let distance = utils.vector(mob, player).norm;
                         if (distance <= mob.radius) {
                             moveTowards(player);
                             return false; // exit .every loop
@@ -276,113 +341,105 @@ function gameServer(io) {
             actionTimer = setTimeout(actionLoop, actionDelay);
         }
 
-        // interrupt action loop
+        // interrupt action loop and delete mob object from global lists
         function destroy() {
             clearTimeout(actionTimer);
+            removeFromGrid(mob);
         }
 
         mob.destroy = destroy;
 
-        return mob;
+        // add new mob object to global lists
+        mob.id = nextMobId;
+        nextMobId += 1;
+        addToGrid(mob);
     }
 
-
-    // async read map file into the object
-    // start server update loops after map has been loaded
-    function readMap() {
-        fs.readFile('map.json', 'utf8', function (err, data) {
-            if (err) {
-                console.log('Error reading map.json');
-                console.log(err);
-            }
-
-            console.log('map.json read successfully');
-            var w = JSON.parse(data);
-            game.world.ground = w.ground;
-            game.world.objects = w.objects;
-
-            // after map is loaded, start server update loops
-            update();
-            setTimeout(saveServer, 60 * 1000);
-            setTimeout(updateEnvironment, 60 * 1000);
-        });
-    }
-
-
-
-
-
-
-    // spawned mobs counter = id
-    let nextMobId = 0;
-
+    // Keep mobs population at the specified maximum
     function spawnMobs() {
-        let mobIds = Object.keys(game.mobs);
-        for (let i = mobIds.length; i < WORLD.MOB_LIMIT; i += 1) {
-            let mob = createMob(nextMobId, worldSpawnTable);
-            game.mobs[nextMobId] = mob;
-            game.world.mobs[mob.x][mob.y] = mob;
-            nextMobId += 1;
+        let mobsCount = Object.keys(mobs).length;
+        for (let i = mobsCount; i < base.constants.mobLimit; i += 1) {
+            createMob(worldSpawnTable);
         }
     }
 
+    // constructor for bags on the ground
+    function createBag(spec) {
+        let bag = {
+            x: spec.x,
+            y: spec.y,
+            items: []
+        };
 
-
-
-    // add player on connection
-    function addPlayer(client) {
-        clients[client.id] = client;
-        let player = createPlayer();
-        player.id = client.id;
-        game.players[client.id] = player;
-        game.world.players[player.x][player.y] = player;
-        var playersCount = Object.keys(game.players).length;
-        console.log('Player ' + client.id + ' joined the game. Current number of players: ' + playersCount);
-
-        client.broadcast.emit('new player', client.id);
-        io.emit('players online', playersCount);
-
-    }
-
-    // remove player on disconnection
-    function removePlayer(client) {
-        delete clients[client.id];
-        let player = game.players[client.id];
-        delete game.players[client.id];
-        delete game.world.players[player.x][player.y];
-        var playersCount = Object.keys(game.players).length;
-        console.log('Player ' + client.id + ' left the game. Current number of players: ' + playersCount);
-        client.broadcast.emit('players online', playersCount);
-    }
-
-
-    // listen for connection of new clients
-    io.on('connection', function (client) {
-
-
-        console.log('\t socket.io:: player ' + client.id + ' connected');
-
-        client.emit('connected', {id: client.id});
-
-
-        addPlayer(client);
-
-        // Remove player from game on disconnect
-        client.on('disconnect', function () {
-            console.log('\t socket.io:: client disconnected ' + client.id);
-
-            removePlayer(client);
+        // generate items from random drop table
+        spec.items.forEach(function (item) {
+            if (Math.random() < item.prob) {
+                bag.items.push(item.id);
+            }
         });
 
+        let lifetimeTimer;
+
+        function destroy() {
+            clearTimeout(lifetimeTimer);
+            delete grid[bag.x][bag.y].bag;
+            console.log('destroy bag at ', bag.x, ' ', bag.y)
+        }
+
+        // add new bag object to global lists
+        if (bag.items.length > 0) {
+            lifetimeTimer = setTimeout(destroy, base.constants.bagLifetime);
+            grid[bag.x][bag.y].bag = bag;
+            console.log('create bag at ', bag.x, ' ', bag.y)
+        }
+    }
+
+    // listen for connection of new clients
+    io.on('connection', function onConnection(socket) {
+        socket.emit('connected', {id: socket.id});
+
+        // todo: players as objects similar to mobs
+        let player = {};
+        player.id = socket.id;
+        //player.socket = socket; // creates circular structure
+        player.emit = function (msg, data) {
+            socket.emit(msg, data);
+        };
+        player.type = base.constants.charTypes.player;
+        let x, y, cellEmpty;
+        do {
+            x = Math.floor(Math.random() * base.constants.world.width);
+            y = Math.floor(Math.random() * base.constants.world.height);
+            cellEmpty = (typeof grid[x][y].char === 'undefined');
+            // can still spawn on top of objects
+        } while (!cellEmpty);
+        player.x = x;
+        player.y = y;
+        player.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
+        player.name = 'Player ' + Math.round(1000 *Math.random());
+        player.lastAction = Date.now();
+        player.speed = 5;
+        player.inventory = [];
+
+        addToGrid(player);
+        let playersCount = Object.keys(players).length;
+        console.log('Player connected: ' + socket.id);
+        console.log('Current number of players: ' + playersCount);
+        io.emit('msg', player.name + ' joined the game. Players online: ' + playersCount);
+
+        // Remove player from game on disconnect
+        socket.on('disconnect', function onDisconnect() {
+            removeFromGrid(player);
+            playersCount = Object.keys(players).length;
+            io.emit('msg',  player.name + ' left the game. Players online: ' + playersCount);
+            console.log('Player disconnected: ' + socket.id);
+            console.log('Current number of players: ' + playersCount);
+        });
 
         // Inputs listener
-        client.on('input', function onInput(key) {
-            let player = game.players[client.id];
-
-
-            const timestamp = Date.now();
-            if (player.lastAction + base.ACTION_DELAY / player.speed < timestamp) {
-
+        socket.on('input', function onInput(key) {
+            let timestamp = Date.now();
+            if (player.lastAction + base.constants.actionDelay / player.speed < timestamp) {
                 if (key === 'e' || key === 'w' || key === 'n' || key === 's') { // move
                     let newPos = {
                         x: player.x,
@@ -404,90 +461,63 @@ function gameServer(io) {
                         break;
                     }
 
-                    util.wrapOverWorld(newPos);
+                    utils.wrapOverWorld(newPos);
 
-                    let obj = game.world.objects[newPos.x][newPos.y];
-                    let mob = game.world.mobs[newPos.x][newPos.y];
+                    let object = grid[newPos.x][newPos.y].object;
+                    let other = grid[newPos.x][newPos.y].char;
 
-                    if (mob) {
-                        // attack if there is mob at destination
-                        mob.destroy();
-                        delete game.mobs[mob.id];
-                        delete game.world.mobs[newPos.x][newPos.y];
-                        let item = common.base.ITEMS.LEATHER;
-                        player.inventory.push(item);
-                        client.emit('addItem', item);
-                        client.emit('hit', 'You hit ' + mob.name);
+                    if (typeof other !== 'undefined') {
+                        // attack if there is another char at destination
+                        socket.emit('hit', 'You hit ' + other.name);
 
-                    } else if (typeof obj === 'number') {
+                        if (other.type === base.constants.charTypes.player) {
+                            other.emit('hit', player.name + ' hits you!');
+                        } else if (other.type === base.constants.charTypes.mob) {
+                            createBag({
+                                x: newPos.x,
+                                y: newPos.y,
+                                items: other.drops
+                            });
+                            other.destroy();
+                            //let item = common.base.ITEMS.LEATHER;
+                            //player.inventory.push(item);
+                            //client.emit('addItem', item);
+                        }
+                    } else if (typeof object === 'number') {
                         // interact if there is object at destination
-                        if (obj === base.OBJECTS.TREE || obj === base.OBJECTS.PALM || obj === base.OBJECTS.WOOD) {
-                            let item = common.base.ITEMS.WOOD;
-                            delete game.world.objects[newPos.x][newPos.y];
+                        if (object === base.objects.tree
+                            || object === base.objects.palm
+                            || object === base.objects.wood) {
+                            let item = base.items.wood;
+                            delete grid[newPos.x][newPos.y].object;
                             player.inventory.push(item);
-                            client.emit('addItem', item);
+                            //player.socket.emit('addItem', item);
                         }
                     } else {
-                        // walk if there is no object at destination
-                        delete game.world.players[player.x][player.y];
-                        player.x = newPos.x;
-                        player.y = newPos.y;
-                        game.world.players[player.x][player.y] = player;
+                        // walk if destination cell is empty
+                        moveOnGrid(player, newPos);
                     }
                 } else if (key === 'a') { // action
-                    if (typeof game.world.objects[player.x][player.y] !== 'number') {
-                        let item = common.base.ITEMS.WOOD;
+                    if (typeof grid[player.x][player.y].object !== 'number') {
+                        let item = base.items.wood;
                         let index = player.inventory.indexOf(item);
                         if (index >= 0) {
-                            game.world.objects[player.x][player.y] = base.OBJECTS.WOOD;
+                            grid[player.x][player.y].object = base.objects.wood;
                             player.inventory.splice(index, 1);
-                            client.emit('removeItem', item);
+                            //player.socket.emit('removeItem', item);
                         }
                     }
-
                 }
 
                 player.lastAction = timestamp;
-
             }
-
         });
-
 
         // Respond to ping request
-        client.on('ping', function () {
-            client.emit('pong');
+        socket.on('ping', function onPing() {
+            socket.emit('pong');
         });
-
-
     });
-
-
-    // -------------------------------------------------------------
-    // Start game server
-    // -------------------------------------------------------------
-    (function startServer() {
-
-        readMap();
-
-        // grids for locations of mobs, players and loot bags
-        game.world.mobs = [];
-        game.world.players = [];
-        game.world.bags = [];
-        for (let i = 0; i < base.WORLD.WIDTH; i += 1) {
-            game.world.mobs[i] = [];
-            game.world.players[i] = [];
-            game.world.bags[i] = [];
-        }
-
-        spawnMobs();
-
-        console.log('Server start successful');
-
-    }());
-
 }
-
-
 
 module.exports = gameServer;

@@ -4,24 +4,33 @@
 
         <title>Utopia Online - Sandbox MMORPG</title>
 
-        <!-- Library code -->
-        <!-- Load socket.io client side contents. -->
+        <!-- Third party libraries -->
         <script src="/socket.io/socket.io.js"></script>
-        <!-- PIXI.js engine -->
         <script src="/pixi.dev.js"></script>
 
         <!-- Game code -->
-        <!-- Load common module. -->
-        <script src="game_common.js"></script>
-        <!-- Load the game client code. -->
+        <script src="base.js"></script>
+        <script src="utils.js"></script>
         <script src="game_client.js"></script>
 
     </head>
 
     <body>
-        <div id="game_window">
-            <div id="canvas_div" style="float: left;"></div>
-            <div id="ui_panel" style="float: left;"></div>
+        <div id="gameWindow">
+            <div id="canvasDiv" style="float: left; background-color: greenyellow"></div>
+            <div id="uiPanel" style="float: left; background-color: skyblue">
+                <div id="debug"></div>
+                <div>Inventory:
+                    <div id="inventory"></div>
+                </div>
+                <div id="groundContainer">On the ground:
+                    <div id="ground"></div>
+                </div>
+                <div id="notifications" style="overflow: auto; height: 150px">
+                    Welcome to Utopia Online!<br>
+                    WASD to move. SPACEBAR to place wood. Walk into tree or wood to remove it.
+                </div>
+            </div>
         </div>
     </body>
 </html>

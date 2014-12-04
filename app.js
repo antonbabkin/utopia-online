@@ -23,8 +23,12 @@ app.get('/', function (req, res) {
     res.sendFile(__dirname + '/index.html');
 });
 
-app.get('/game_common.js', function (req, res) {
-    res.sendFile(__dirname + '/game_common.js');
+app.get('/base.js', function (req, res) {
+    res.sendFile(__dirname + '/base.js');
+});
+
+app.get('/utils.js', function (req, res) {
+    res.sendFile(__dirname + '/utils.js');
 });
 
 app.get('/game_client.js', function (req, res) {
