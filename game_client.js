@@ -23,7 +23,7 @@ window.addEventListener('load', function clientLoader() {
     var GROUNDS = base.grounds;
 
 
-    var self;
+    var self, inventory;
     var grid;
     var viewport = {};
 
@@ -56,17 +56,36 @@ window.addEventListener('load', function clientLoader() {
 
 
     var ui = {};
+
     ui.inventory = {
         update: function () {
-            var inv = '';
-            self.inventory.forEach(function (item) {
-                inv += '<img src="public/' +
+            var items = '';
+            inventory.forEach(function (item) {
+                items += '<img src="public/' +
                     base.images.items[item] +
                     '.png">'
             });
-            div.inventory.innerHTML = inv;
+            div.inventory.innerHTML = items;
         }
     };
+
+    // todo: make it work with multiple items in a bag
+    ui.ground = {
+        item: document.getElementById('groundItem'),
+        update: function () {
+            var cell = grid[self.x][self.y];
+            var items = '';
+            if (typeof cell.bag !== 'undefined') {
+                div.groundContainer.style.display = "initial";
+                ui.ground.item.src = 'public/' + base.images.items[cell.bag.items[0]] + '.png';
+            } else {
+                div.groundContainer.style.display = "none";
+            }
+        }
+    };
+    ui.ground.item.addEventListener('click', function () {
+        socket.emit('pick', 0);
+    });
 
     ui.notifications = {
         push: function (msg) {
@@ -76,7 +95,7 @@ window.addEventListener('load', function clientLoader() {
     };
 
     ui.settings = {
-        mute: false
+        mute: true
     };
 
     // -------------------------
@@ -137,19 +156,15 @@ window.addEventListener('load', function clientLoader() {
     socket.on('world_update', function onWorldUpdate(state) {
         grid = state.grid;
         self = grid[state.self.x][state.self.y].char;
-        ui.inventory.update();
+
+        updateViewport();
+        ui.ground.update();
     });
 
-    //socket.on('addItem', function onAddItem(item) {
-    //    self.inventory.push(item);
-    //    ui.inventory.update();
-    //});
-    //
-    //socket.on('removeItem', function onRemoveItem(item) {
-    //    var inv = self.inventory;
-    //    inv.splice(inv.indexOf(item), 1);
-    //    ui.inventory.update();
-    //});
+    socket.on('inventory', function onInventory(inv) {
+        inventory = inv;
+        ui.inventory.update();
+    });
 
     socket.on('hit', function onHit(msg) {
         sounds.play(sounds.hit);
@@ -316,13 +331,9 @@ window.addEventListener('load', function clientLoader() {
     function animate() {
         var newTime, deltaTime;
 
-
         window.requestAnimationFrame(animate);
 
-        updateViewport();
-
         renderer.render(stage);
-
 
         // Measure FPS
         if (!lastAnimTime) {
@@ -332,7 +343,7 @@ window.addEventListener('load', function clientLoader() {
             newTime = Date.now();
             deltaTime = newTime - lastAnimTime;
             lastAnimTime = newTime;
-            fps = 1000 / deltaTime;
+            fps = 0.9 * fps + 0.1 * 1000 / deltaTime; // moving average
         }
 
     }

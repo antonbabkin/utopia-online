@@ -28,14 +28,15 @@ function baseClosure() {
         },
         actionDelay: 1000,
         mobLimit: 5,
-        bagLifetime: 60 * 60 * 1000,
+        bagLifetime: 60 * 1000,
         stateUpdateTime: 100,
         serverSaveTime: 5 * 60 * 1000,
         environmentUpdateTime: 60 * 1000,
         charTypes: {
             player: 0,
             mob: 1
-        }
+        },
+        maxInventory: 20
     };
 
     constants.viewport.widthP = constants.viewport.width * constants.tile.width;

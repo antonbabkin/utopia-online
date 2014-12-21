@@ -383,29 +383,27 @@ function gameServer(io) {
         function destroy() {
             clearTimeout(lifetimeTimer);
             delete grid[bag.x][bag.y].bag;
-            console.log('destroy bag at ', bag.x, ' ', bag.y)
         }
+
+        function getItem(itemNumber) {
+            let item = bag.items.splice(itemNumber, 1)[0];
+            if (bag.items.length === 0) {
+                destroy();
+            }
+        }
+
+        // add public methods
+        bag.getItem = getItem;
 
         // add new bag object to global lists
         if (bag.items.length > 0) {
             lifetimeTimer = setTimeout(destroy, base.constants.bagLifetime);
             grid[bag.x][bag.y].bag = bag;
-            console.log('create bag at ', bag.x, ' ', bag.y)
         }
     }
 
-    // listen for connection of new clients
-    io.on('connection', function onConnection(socket) {
-        socket.emit('connected', {id: socket.id});
 
-        // todo: players as objects similar to mobs
-        let player = {};
-        player.id = socket.id;
-        //player.socket = socket; // creates circular structure
-        player.emit = function (msg, data) {
-            socket.emit(msg, data);
-        };
-        player.type = base.constants.charTypes.player;
+    function createPlayer(socket) {
         let x, y, cellEmpty;
         do {
             x = Math.floor(Math.random() * base.constants.world.width);
@@ -413,33 +411,56 @@ function gameServer(io) {
             cellEmpty = (typeof grid[x][y].char === 'undefined');
             // can still spawn on top of objects
         } while (!cellEmpty);
-        player.x = x;
-        player.y = y;
-        player.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
-        player.name = 'Player ' + Math.round(1000 *Math.random());
-        player.lastAction = Date.now();
-        player.speed = 5;
-        player.inventory = [];
 
-        addToGrid(player);
-        let playersCount = Object.keys(players).length;
-        console.log('Player connected: ' + socket.id);
-        console.log('Current number of players: ' + playersCount);
-        io.emit('msg', player.name + ' joined the game. Players online: ' + playersCount);
+        // public properties and methods
+        let player = {
+            x: x,
+            y: y,
+            tint: (0.5 + 0.5 * Math.random()) * 0xFFFFFF,
+            name: 'Player ' + Math.round(Math.random() * 100),
+            type: base.constants.charTypes.player,
+            id: socket.id
+        };
 
-        // Remove player from game on disconnect
-        socket.on('disconnect', function onDisconnect() {
-            removeFromGrid(player);
-            playersCount = Object.keys(players).length;
-            io.emit('msg',  player.name + ' left the game. Players online: ' + playersCount);
-            console.log('Player disconnected: ' + socket.id);
-            console.log('Current number of players: ' + playersCount);
-        });
+        player.emit = function (msg, data) {
+            socket.emit(msg, data);
+        };
+
+        // private properties and methods
+        let inventory = [];
+        let speed = 5;
+        let actionDelay = base.constants.actionDelay / speed;
+
+        let onDelay = false;
+        let delayTimer;
+
+        function addItem(item) {
+            if (inventory.length < base.constants.maxInventory) {
+                inventory.push(item);
+                socket.emit('inventory', inventory);
+                return true;
+            } else {
+                socket.emit('msg', 'Inventory full');
+                return false;
+            }
+        }
+
+        function removeItem(item) {
+            let index = inventory.indexOf(item);
+            if (index >= 0) {
+                inventory.splice(index, 1);
+                socket.emit('inventory', inventory);
+                return true;
+            } else {
+                return false;
+            }
+        }
+
 
         // Inputs listener
         socket.on('input', function onInput(key) {
             let timestamp = Date.now();
-            if (player.lastAction + base.constants.actionDelay / player.speed < timestamp) {
+            if (!onDelay) {
                 if (key === 'e' || key === 'w' || key === 'n' || key === 's') { // move
                     let newPos = {
                         x: player.x,
@@ -447,18 +468,18 @@ function gameServer(io) {
                     };
 
                     switch (key) {
-                    case 'e':
-                        newPos.x += 1;
-                        break;
-                    case 'w':
-                        newPos.x -= 1;
-                        break;
-                    case 'n':
-                        newPos.y -= 1;
-                        break;
-                    case 's':
-                        newPos.y += 1;
-                        break;
+                        case 'e':
+                            newPos.x += 1;
+                            break;
+                        case 'w':
+                            newPos.x -= 1;
+                            break;
+                        case 'n':
+                            newPos.y -= 1;
+                            break;
+                        case 's':
+                            newPos.y += 1;
+                            break;
                     }
 
                     utils.wrapOverWorld(newPos);
@@ -489,9 +510,10 @@ function gameServer(io) {
                             || object === base.objects.palm
                             || object === base.objects.wood) {
                             let item = base.items.wood;
-                            delete grid[newPos.x][newPos.y].object;
-                            player.inventory.push(item);
-                            //player.socket.emit('addItem', item);
+                            // only remove object if player's inventory not full
+                            if (addItem(item)) {
+                                delete grid[newPos.x][newPos.y].object;
+                            }
                         }
                     } else {
                         // walk if destination cell is empty
@@ -500,17 +522,64 @@ function gameServer(io) {
                 } else if (key === 'a') { // action
                     if (typeof grid[player.x][player.y].object !== 'number') {
                         let item = base.items.wood;
-                        let index = player.inventory.indexOf(item);
-                        if (index >= 0) {
+                        // only place wood if it is in inventory
+                        if (removeItem(item)) {
                             grid[player.x][player.y].object = base.objects.wood;
-                            player.inventory.splice(index, 1);
-                            //player.socket.emit('removeItem', item);
                         }
                     }
                 }
 
-                player.lastAction = timestamp;
+                onDelay = true;
+                delayTimer = setTimeout(function () {
+                    onDelay = false;
+                }, actionDelay);
             }
+        });
+
+        // clicked item # bagItem on the ground
+        socket.on('pick', function onPick(bagItem) {
+            let bag = grid[player.x][player.y].bag;
+            if (typeof bag !== 'undefined') { // make sure that request is legit
+                let item = bag.items[bagItem];
+                // only add item if item with such number exists in the bag and player's inventory is not full
+                if (typeof item !== 'undefined' && addItem(item)) {
+                    bag.getItem(bagItem);
+                }
+            }
+        });
+
+        // interrupt action loop and delete mob object from global lists
+        function destroy() {
+            clearTimeout(delayTimer);
+            removeFromGrid(player);
+        }
+
+        player.destroy = destroy;
+
+        // add new player object to global lists and return player object
+        addToGrid(player);
+        return player;
+    }
+
+
+    // listen for connection of new clients
+    io.on('connection', function onConnection(socket) {
+        socket.emit('connected', {id: socket.id});
+
+        let player = createPlayer(socket);
+
+        let playersCount = Object.keys(players).length;
+        console.log('Player connected: ' + socket.id);
+        console.log('Current number of players: ' + playersCount);
+        io.emit('msg', player.name + ' joined the game. Players online: ' + playersCount);
+
+        // Remove player from game on disconnect
+        socket.on('disconnect', function onDisconnect() {
+            player.destroy();
+            playersCount = Object.keys(players).length;
+            io.emit('msg',  player.name + ' left the game. Players online: ' + playersCount);
+            console.log('Player disconnected: ' + socket.id);
+            console.log('Current number of players: ' + playersCount);
         });
 
         // Respond to ping request

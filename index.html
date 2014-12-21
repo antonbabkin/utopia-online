@@ -18,15 +18,15 @@
     <body>
         <div id="gameWindow">
             <div id="canvasDiv" style="float: left; background-color: greenyellow"></div>
-            <div id="uiPanel" style="float: left; background-color: skyblue">
+            <div id="uiPanel" style="float: left; background-color: skyblue; position:relative;">
                 <div id="debug"></div>
                 <div>Inventory:
                     <div id="inventory"></div>
                 </div>
                 <div id="groundContainer">On the ground:
-                    <div id="ground"></div>
+                    <div id="ground"><img id="groundItem"></div>
                 </div>
-                <div id="notifications" style="overflow: auto; height: 150px">
+                <div id="notifications" style="overflow: auto; height: 150px; position:absolute; left: 0; bottom: 0;">
                     Welcome to Utopia Online!<br>
                     WASD to move. SPACEBAR to place wood. Walk into tree or wood to remove it.
                 </div>
