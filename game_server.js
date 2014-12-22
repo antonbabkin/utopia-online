@@ -96,8 +96,7 @@ function gameServer(io) {
                 }
             }
 
-            // after map is loaded, start server update loops
-            setTimeout(update, base.constants.stateUpdateTime);
+            // after map is loaded, start server loops
             setTimeout(saveServer, base.constants.serverSaveTime);
             setTimeout(updateEnvironment, base.constants.environmentUpdateTime);
         });
@@ -131,28 +130,6 @@ function gameServer(io) {
         });
 
         setTimeout(saveServer, base.constants.serverSaveTime);
-    }
-
-    // server state update loop
-    function update() {
-        // todo: each player gets a limited chunk of grid around him
-        Object.keys(players).forEach(function (pid) {
-            let player = players[pid];
-            let state = {
-                grid: grid,
-                self: {
-                    x: player.x,
-                    y: player.y
-                }
-            };
-            try {
-                player.emit('world_update', state);
-            } catch (e) {
-                console.log('update fail: ' + e);
-            }
-        });
-
-        setTimeout(update, base.constants.stateUpdateTime);
     }
 
     // environment update loop
@@ -456,6 +433,32 @@ function gameServer(io) {
             }
         }
 
+        // part of the grid visible to player, that is emitted on update
+        let viewport = [];
+        function updateViewport() {
+            let x1, y1, xy;
+            let xl = player.x - base.constants.viewport.halfWidth;
+            let xh = player.x + base.constants.viewport.halfWidth;
+            let yl = player.y - base.constants.viewport.halfHeight;
+            let yh = player.y + base.constants.viewport.halfHeight;
+            for (x1 = xl; x1 <= xh; x1 += 1) {
+                viewport[x1 - xl] = [];
+                for (y1 = yl; y1 <= yh; y1 += 1) {
+                    xy = {x: x1, y: y1};
+                    utils.wrapOverWorld(xy);
+                    viewport[x1 - xl][y1 - yl] = grid[xy.x][xy.y];
+                }
+            }
+        }
+        updateViewport();
+
+        // run update loop
+        let updateTimer;
+        (function updateLoop() {
+            socket.emit('viewport', viewport);
+            updateTimer = setTimeout(updateLoop, base.constants.playerUpdateTime);
+        }());
+
 
         // Inputs listener
         socket.on('input', function onInput(key) {
@@ -518,6 +521,7 @@ function gameServer(io) {
                     } else {
                         // walk if destination cell is empty
                         moveOnGrid(player, newPos);
+                        updateViewport();
                     }
                 } else if (key === 'a') { // action
                     if (typeof grid[player.x][player.y].object !== 'number') {
@@ -551,6 +555,7 @@ function gameServer(io) {
         // interrupt action loop and delete mob object from global lists
         function destroy() {
             clearTimeout(delayTimer);
+            clearTimeout(updateTimer);
             removeFromGrid(player);
         }
 

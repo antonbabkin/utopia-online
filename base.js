@@ -19,17 +19,18 @@ function baseClosure() {
             height: 32
         },
         world: { // World size in tiles
-            width: 20,
-            height: 20
+            width: 100,
+            height: 100
         },
         viewport: { // visible part of the map, size in tiles
             width: 15,
             height: 15
         },
         actionDelay: 1000,
-        mobLimit: 5,
+        mobLimit: 25,
         bagLifetime: 60 * 1000,
         stateUpdateTime: 100,
+        playerUpdateTime: 200,
         serverSaveTime: 5 * 60 * 1000,
         environmentUpdateTime: 60 * 1000,
         charTypes: {
@@ -41,6 +42,8 @@ function baseClosure() {
 
     constants.viewport.widthP = constants.viewport.width * constants.tile.width;
     constants.viewport.heightP = constants.viewport.height * constants.tile.height;
+    constants.viewport.halfWidth = (constants.viewport.width - 1) / 2;
+    constants.viewport.halfHeight = (constants.viewport.height - 1) / 2;
 
     // UI sidepanel size in pixels
     constants.uiPanel = {

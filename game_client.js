@@ -25,7 +25,7 @@ window.addEventListener('load', function clientLoader() {
 
     var self, inventory;
     var grid;
-    var viewport = {};
+    var viewport;
 
 
     // ----------------------
@@ -73,11 +73,10 @@ window.addEventListener('load', function clientLoader() {
     ui.ground = {
         item: document.getElementById('groundItem'),
         update: function () {
-            var cell = grid[self.x][self.y];
-            var items = '';
-            if (typeof cell.bag !== 'undefined') {
+            var bag = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag;
+            if (typeof bag !== 'undefined') {
                 div.groundContainer.style.display = "initial";
-                ui.ground.item.src = 'public/' + base.images.items[cell.bag.items[0]] + '.png';
+                ui.ground.item.src = 'public/' + base.images.items[bag.items[0]] + '.png';
             } else {
                 div.groundContainer.style.display = "none";
             }
@@ -135,14 +134,25 @@ window.addEventListener('load', function clientLoader() {
         textures.mobs[name] = PIXI.Texture.fromImage('public/' + MOBS[name].image +'.png');
     });
 
+    // 2-dim array containers for sprites
     var sprites = {};
-
+    sprites.ground = [];
+    sprites.objects = [];
+    sprites.bags = [];
+    sprites.chars = [];
+    (function () {
+        var i;
+        for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
+            Object.keys(sprites).forEach(function (elem) {
+                sprites[elem][i] = [];
+            });
+        }
+    }());
 
 
     // -------------------------
     // Listen to server events
     // -------------------------
-
     var socket = io();
 
     socket.on('connected', function onConnected(data) {
@@ -153,10 +163,9 @@ window.addEventListener('load', function clientLoader() {
         ui.notifications.push(msg);
     });
 
-    socket.on('world_update', function onWorldUpdate(state) {
-        grid = state.grid;
-        self = grid[state.self.x][state.self.y].char;
-
+    socket.on('viewport', function onViewport(view) {
+        viewport = view;
+        self = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].char;
         updateViewport();
         ui.ground.update();
     });
@@ -174,70 +183,28 @@ window.addEventListener('load', function clientLoader() {
     // Check ping every 5 seconds
     var pingTime, latency;
 
-    function ping() {
+    (function ping() {
         pingTime = Date.now();
         socket.emit('ping');
         setTimeout(ping, 5000);
-    }
+    }());
 
     socket.on('pong', function onPong() {
         latency = Date.now() - pingTime;
     });
 
-    ping();
-
-    // transform world coords into viewport coords
-    function worldToViewport(obj) {
-        var x = obj.x;
-        var y = obj.y;
-        if (x < viewport.corner.x) {
-            x += CONSTANTS.world.width;
-        }
-        if (y < viewport.corner.y) {
-            y += CONSTANTS.world.height;
-        }
-        x -= viewport.corner.x;
-        y -= viewport.corner.y;
-        return {x: x, y: y};
-    }
 
     // create PIXI sprites or update their properties
     function updateViewport() {
-
         // only update if connection established and at least one world state received from server
-        if (typeof grid === 'undefined') {
+        if (typeof viewport === 'undefined') {
             return;
         }
 
         var i, j, cell, sprite, texture;
-
-
-        // world coords of the top-left corner of the viewport
-        viewport.corner = {
-            x: self.x - Math.floor(CONSTANTS.viewport.width / 2),
-            y: self.y - Math.floor(CONSTANTS.viewport.height / 2)
-        };
-        utils.wrapOverWorld(viewport.corner);
-
-        // temporary variable for world coords
-        var xy = {};
-
-        //
-        sprites.ground = sprites.ground || [];
-        sprites.objects = sprites.objects || [];
-        sprites.bags = sprites.bags || [];
-        sprites.chars = sprites.chars || [];
         for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
-            sprites.ground[i] = sprites.ground[i] || [];
-            sprites.objects[i] = sprites.objects[i] || [];
-            sprites.bags[i] = sprites.bags[i] || [];
-            sprites.chars[i] = sprites.chars[i] || [];
-            xy.x = viewport.corner.x + i;
-
             for (j = 0; j < CONSTANTS.viewport.height; j += 1) {
-                xy.y = viewport.corner.y + j;
-                utils.wrapOverWorld(xy);
-                cell = grid[xy.x][xy.y];
+                cell = viewport[i][j];
 
                 // ground
                 // all cells have this attribute of type "number"
