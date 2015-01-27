@@ -13,24 +13,103 @@
         <script src="utils.js"></script>
         <script src="game_client.js"></script>
 
+        <style type="text/css">
+            div.tab {
+                position: absolute;
+                top: 0;
+                width: 56px;
+                height: 36px;
+                border: 2px darkgray solid;
+                text-align: center;
+                background-color: greenyellow;
+                cursor: pointer;
+            }
+            div.tab img {
+                margin-top: 2px;
+                margin-bottom: 2px;
+            }
+            div.tabPanel {
+                position: absolute;
+                top: 40px;
+                left: 0;
+                width: 236px;
+                height: 150px;
+                border: 2px coral solid;
+                background-color: greenyellow;
+            }
+            td.invSlot {
+                width: 32px;
+                height: 32px;
+                padding: 0;
+                border: 1px blue solid;
+            }
+        </style>
     </head>
 
-    <body>
-        <div id="gameWindow">
-            <div id="canvasDiv" style="float: left; background-color: greenyellow"></div>
-            <div id="uiPanel" style="float: left; background-color: skyblue; position:relative;">
-                <div id="debug"></div>
-                <div>Inventory:
-                    <div id="inventory"></div>
-                </div>
-                <div id="groundContainer">On the ground:
-                    <div id="ground"><img id="groundItem"></div>
-                </div>
-                <div id="notifications" style="overflow: auto; height: 150px; position:absolute; left: 0; bottom: 0;">
-                    Welcome to Utopia Online!<br>
-                    WASD to move. SPACEBAR to place wood. Walk into tree or wood to remove it.
-                </div>
+    <body style="margin: 0;">
+        <div id="canvasDiv" style="position: absolute; top: 0; left: 0; width: 480px; height: 480px;"></div>
+        <div id="uiPanel" style="position: absolute; top: 0; left: 480px; width: 240px; height: 480px; background-color: skyblue;">
+            <div id="tabInv" class="tab" style="left: 0; border-color: coral;">
+                <img src="public/bag.png">
+            </div>
+            <div id="tabEquips" class="tab" style="left: 60px;">
+                <img src="public/hero.png">
+            </div>
+            <div id="tabStats" class="tab" style="left: 120px;">
+                <img src="public/sand.png">
+            </div>
+            <div id="tabCraft" class="tab" style="left: 180px;">
+                <img src="public/wood.png">
+            </div>
+            <div id="panelInv" class="tabPanel" style="z-index: 1;">
+                <table style="margin: auto;">
+                    <tr>
+                        <td id="inv0" class="invSlot"></td>
+                        <td id="inv1" class="invSlot"></td>
+                        <td id="inv2" class="invSlot"></td>
+                        <td id="inv3" class="invSlot"></td>
+                        <td id="inv4" class="invSlot"></td>
+                    </tr>
+                    <tr>
+                        <td id="inv5" class="invSlot"></td>
+                        <td id="inv6" class="invSlot"></td>
+                        <td id="inv7" class="invSlot"></td>
+                        <td id="inv8" class="invSlot"></td>
+                        <td id="inv9" class="invSlot"></td>
+                    </tr>
+                    <tr>
+                        <td id="inv10" class="invSlot"></td>
+                        <td id="inv11" class="invSlot"></td>
+                        <td id="inv12" class="invSlot"></td>
+                        <td id="inv13" class="invSlot"></td>
+                        <td id="inv14" class="invSlot"></td>
+                    </tr>
+                    <tr>
+                        <td id="inv15" class="invSlot"></td>
+                        <td id="inv16" class="invSlot"></td>
+                        <td id="inv17" class="invSlot"></td>
+                        <td id="inv18" class="invSlot"></td>
+                        <td id="inv19" class="invSlot"></td>
+                    </tr>
+                </table>
+            </div>
+            <div id="panelEquips" class="tabPanel">
+                Equips
+            </div>
+            <div id="panelStats" class="tabPanel">
+                Stats
+            </div>
+            <div id="panelCraft" class="tabPanel">
+                Craft
+            </div>
+            <div id="groundContainer">On the ground:
+                <div id="ground"><img id="groundItem" style="position:absolute; left: 0; bottom: 150px; cursor: pointer;"></div>
+            </div>
+            <div id="notifications" style="overflow: auto; height: 150px; position:absolute; left: 0; bottom: 0;">
+                Welcome to Utopia Online!<br>
+                WASD to move. SPACEBAR to place wood. Walk into tree or wood to remove it.
             </div>
         </div>
+        <div id="debug" style="float: right;"></div>
     </body>
 </html>

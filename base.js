@@ -27,12 +27,12 @@ function baseClosure() {
             height: 15
         },
         actionDelay: 1000,
-        mobLimit: 25,
+        mobLimit: 50,
         bagLifetime: 60 * 1000,
         stateUpdateTime: 100,
         playerUpdateTime: 200,
-        serverSaveTime: 5 * 60 * 1000,
-        environmentUpdateTime: 60 * 1000,
+        serverSaveTime: 60 * 60 * 1000,
+        environmentUpdateTime: 10 * 60 * 1000,
         charTypes: {
             player: 0,
             mob: 1
@@ -53,50 +53,63 @@ function baseClosure() {
 
 
 
-    var images = {
-        items: {}
-    };
-
     // ------------------------------------------------------------------------------
     // Inventory items
     // ------------------------------------------------------------------------------
-    var items = {
-        wood: 0,
-        leather: 1
+    var items = [];
+    items[0] = {
+        name: 'Wood',
+        image: 'wood'
     };
-    images.items[items.wood] = 'wood';
-    images.items[items.leather] = 'leather';
+    items[1] = {
+        name: 'Leather',
+        image: 'leather'
+    };
+
+    var itemId = {}; // lookup table "name: baseId"
+    items.forEach(function (item, index) {
+        item.bid = index;
+        itemId[item.name] = index;
+    });
+
 
     // ------------------------------------------------------------------------------
     // Mobs
     // ------------------------------------------------------------------------------
-    var mobs = {};
-    mobs['Sphere'] = {
+    var mobs = [];
+    mobs[0] = {
+        name: 'Sphere',
         image: 'sphere',
         aggressive: false,
         speed: 1,
         drops: [
             {
-                id: items.leather,
+                name: 'Leather',
                 prob: 1
             }
         ]
     };
-    mobs['Angry sphere'] = {
+    mobs[1] = {
+        name: 'Angry sphere',
         image: 'angry_sphere',
         aggressive: true,
         speed: 1,
         radius: 5,
         drops: [
             {
-                id: items.leather,
+                name: 'Leather',
                 prob: 1
             }
         ]
     };
 
-    Object.keys(mobs).forEach(function (name) {
-        mobs[name].name = name;
+    var mobId = {}; // lookup table "name: baseId"
+    mobs.forEach(function (mob, index) {
+        mob.bid = index;
+        mobId[mob.name] = index;
+        mob.drops.forEach(function (drop) {
+            drop.bid = itemId[drop.name];
+        });
     });
 
     // ------------------------------------------------------------------------------
@@ -122,10 +135,11 @@ function baseClosure() {
     return {
         constants: constants,
         mobs: mobs,
+        mobId: mobId,
         items: items,
+        itemId: itemId,
         grounds: grounds,
-        objects: objects,
-        images: images
+        objects: objects
     };
 }
 

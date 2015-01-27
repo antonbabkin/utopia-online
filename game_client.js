@@ -17,14 +17,11 @@ window.addEventListener('load', function clientLoader() {
 
     // object "base" is loaded in base.js
     var CONSTANTS = base.constants;
-    var MOBS = base.mobs;
     var OBJECTS = base.objects;
-    var ITEMS = base.items;
     var GROUNDS = base.grounds;
 
 
     var self, inventory;
-    var grid;
     var viewport;
 
 
@@ -35,37 +32,64 @@ window.addEventListener('load', function clientLoader() {
 
     // web page <div> elements
     var div = {
-        window: document.getElementById('gameWindow'),
         canvas: document.getElementById('canvasDiv'),
         panel: document.getElementById('uiPanel'),
         debug: document.getElementById('debug'),
-        inventory: document.getElementById('inventory'),
         notifications: document.getElementById('notifications'),
         groundContainer: document.getElementById('groundContainer'),
-        ground: document.getElementById('ground')
+        ground: document.getElementById('ground'),
+        tabs: {
+            inv: {
+                tab: document.getElementById('tabInv'),
+                panel: document.getElementById('panelInv')
+            },
+            equips: {
+                tab: document.getElementById('tabEquips'),
+                panel: document.getElementById('panelEquips')
+            },
+            stats: {
+                tab: document.getElementById('tabStats'),
+                panel: document.getElementById('panelStats')
+            },
+            craft: {
+                tab: document.getElementById('tabCraft'),
+                panel: document.getElementById('panelCraft')
+            }
+        }
     };
-
-    div.window.style.width = (CONSTANTS.viewport.widthP + CONSTANTS.uiPanel.width) + 'px';
-    div.window.style.height = CONSTANTS.viewport.heightP + 'px';
-
-    div.canvas.style.width = base.constants.viewport.widthP + 'px';
-    div.canvas.style.height = base.constants.viewport.heightP + 'px';
-
-    div.panel.style.width = base.constants.uiPanel.width + 'px';
-    div.panel.style.height = base.constants.uiPanel.height + 'px';
-
 
     var ui = {};
 
+    ui.clickTab = function (tab) {
+        // @tab must be one of @div.tabs
+        if (tab !== ui.activeTab) {
+            ui.activeTab.tab.style.borderColor = 'darkgray';
+            ui.activeTab.panel.style.zIndex = 0;
+            tab.tab.style.borderColor = 'coral';
+            tab.panel.style.zIndex = 1;
+            ui.activeTab = tab;
+        }
+    };
+    Object.keys(div.tabs).forEach(function (tabName) {
+        div.tabs[tabName].tab.addEventListener('click', function () {
+            ui.clickTab(div.tabs[tabName]);
+        });
+    });
+
+    ui.activeTab = div.tabs.inv;
+
     ui.inventory = {
         update: function () {
-            var items = '';
-            inventory.forEach(function (item) {
-                items += '<img src="public/' +
-                    base.images.items[item] +
-                    '.png">'
-            });
-            div.inventory.innerHTML = items;
+            var i, item, slot;
+            for (i = 0; i < base.constants.maxInventory; i += 1) {
+                item = inventory[i];
+                slot = document.getElementById('inv' + i);
+                if (typeof item === 'undefined') {
+                    slot.style.backgroundImage = '';
+                } else {
+                    slot.style.backgroundImage = 'url(public/' + base.items[item].image + '.png)';
+                }
+            }
         }
     };
 
@@ -75,10 +99,10 @@ window.addEventListener('load', function clientLoader() {
         update: function () {
             var bag = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag;
             if (typeof bag !== 'undefined') {
-                div.groundContainer.style.display = "initial";
-                ui.ground.item.src = 'public/' + base.images.items[bag.items[0]] + '.png';
+                div.groundContainer.style.display = 'initial';
+                ui.ground.item.src = 'public/' + base.items[bag.items[0]].image + '.png';
             } else {
-                div.groundContainer.style.display = "none";
+                div.groundContainer.style.display = 'none';
             }
         }
     };
@@ -130,16 +154,17 @@ window.addEventListener('load', function clientLoader() {
     textures.objects[OBJECTS.rock] = PIXI.Texture.fromImage('public/rock.png');
     textures.objects[OBJECTS.wood] = PIXI.Texture.fromImage('public/wood.png');
     textures.bag = PIXI.Texture.fromImage('public/bag.png');
-    Object.keys(MOBS).forEach(function (name) {
-        textures.mobs[name] = PIXI.Texture.fromImage('public/' + MOBS[name].image +'.png');
+    base.mobs.forEach(function (mob) {
+        textures.mobs[mob.bid] = PIXI.Texture.fromImage('public/' + mob.image +'.png');
     });
 
     // 2-dim array containers for sprites
-    var sprites = {};
-    sprites.ground = [];
-    sprites.objects = [];
-    sprites.bags = [];
-    sprites.chars = [];
+    var sprites = {
+        ground: [],
+        objects: [],
+        bags: [],
+        chars: []
+    };
     (function () {
         var i;
         for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
@@ -267,7 +292,7 @@ window.addEventListener('load', function clientLoader() {
                     if (cell.char.type === CONSTANTS.charTypes.player) {
                         texture = textures.hero;
                     } else if (cell.char.type === CONSTANTS.charTypes.mob) {
-                        texture = textures.mobs[cell.char.name];
+                        texture = textures.mobs[cell.char.bid];
                     }
                     if (typeof sprite !== 'object') {
                         sprite = new PIXI.Sprite(texture);

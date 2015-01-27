@@ -173,6 +173,7 @@ function gameServer(io) {
         // sum of frequencies
         let sumF = 0;
         table.forEach(function (mob) {
+            mob.bid = base.mobId[mob.name];
             sumF += mob.freq;
         });
 
@@ -188,20 +189,19 @@ function gameServer(io) {
 
     // Create random mob from spawn probability table
     function createMob(spawnTable) {
-        // todo: change mob indexing to work through integer ID's instead of names
         // draw a random entry from spawnTable
         let rnd = Math.random();
-        let spawnName = '';
+        let spawnId;
         spawnTable.every(function (mob) {
             if (mob.cumP > rnd) {
-                spawnName = mob.name;
+                spawnId = mob.bid;
                 return false;
             }
             return true;
         });
 
-        if (spawnName === '') {
-            console.error('Failed to get mob name from spawn table (rnd = ' + rnd + '):\n' + spawnTable);
+        if (typeof spawnId === 'undefined') {
+            console.error('Failed to get mob from spawn table (rnd = ' + rnd + '):\n' + spawnTable);
             return;
         }
 
@@ -213,11 +213,11 @@ function gameServer(io) {
             // can still spawn on top of objects
         } while (!cellEmpty);
 
-        let mob = Object.create(base.mobs[spawnName]);
+        let mob = Object.create(base.mobs[spawnId]);
         mob.type = base.constants.charTypes.mob;
         mob.x = x;
         mob.y = y;
-        mob.name = spawnName; // rewrite property from database, so it becomes own property and is transferred to clients
+        mob.bid = spawnId; // rewrite property from database, so it becomes own property and is transferred to clients
         mob.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
 
         let actionDelay = base.constants.actionDelay / mob.speed;
@@ -351,7 +351,7 @@ function gameServer(io) {
         // generate items from random drop table
         spec.items.forEach(function (item) {
             if (Math.random() < item.prob) {
-                bag.items.push(item.id);
+                bag.items.push(item.bid);
             }
         });
 
@@ -363,7 +363,7 @@ function gameServer(io) {
         }
 
         function getItem(itemNumber) {
-            let item = bag.items.splice(itemNumber, 1)[0];
+            bag.items.splice(itemNumber, 1);
             if (bag.items.length === 0) {
                 destroy();
             }
@@ -503,16 +503,13 @@ function gameServer(io) {
                                 items: other.drops
                             });
                             other.destroy();
-                            //let item = common.base.ITEMS.LEATHER;
-                            //player.inventory.push(item);
-                            //client.emit('addItem', item);
                         }
                     } else if (typeof object === 'number') {
                         // interact if there is object at destination
                         if (object === base.objects.tree
                             || object === base.objects.palm
                             || object === base.objects.wood) {
-                            let item = base.items.wood;
+                            let item = base.itemId['Wood'];
                             // only remove object if player's inventory not full
                             if (addItem(item)) {
                                 delete grid[newPos.x][newPos.y].object;
@@ -525,7 +522,7 @@ function gameServer(io) {
                     }
                 } else if (key === 'a') { // action
                     if (typeof grid[player.x][player.y].object !== 'number') {
-                        let item = base.items.wood;
+                        let item = base.itemId['Wood'];
                         // only place wood if it is in inventory
                         if (removeItem(item)) {
                             grid[player.x][player.y].object = base.objects.wood;
