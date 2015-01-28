@@ -13,6 +13,104 @@ function gameServer(io) {
     let base = require('./base.js');
     let utils = require('./utils.js');
 
+    // Augment utils with server-only functions
+    utils.inventory = {
+        countItem: function (player, itemBid) {
+            let count = 0;
+            player.getInventory().forEach(function (invItemBid) {
+                if (invItemBid === itemBid) {
+                    count += 1;
+                }
+            });
+            return count;
+        },
+        addItem: function (player, itemBid) {
+            let inventory = player.getInventory();
+            if (inventory.length < base.constants.maxInventory) {
+                inventory.push(itemBid);
+                player.emit('inventory', inventory);
+                return true;
+            } else {
+                player.emit('msg', 'Inventory full');
+                return false;
+            }
+        },
+        removeItem: function (player, itemBid, quantity) {
+            quantity = quantity || 1; // default to 1 if @quantity is omitted
+            let inventory = player.getInventory();
+            let count = utils.inventory.countItem(player, itemBid);
+            if (count >= quantity) {
+                let removeCounter = 0;
+                for (let i = inventory.length - 1; i >= 0; i -= 1) {
+                    if (inventory[i] === itemBid) {
+                        inventory.splice(i, 1);
+                        removeCounter += 1;
+                        if (removeCounter === quantity) {
+                            break;
+                        }
+                    }
+                }
+                player.emit('inventory', inventory);
+                return true;
+            } else {
+                return false;
+            }
+        },
+        useItem: function (player, invSlot) {
+            let inventory = player.getInventory();
+            let itemBid = inventory[invSlot];
+            if (typeof itemBid !== 'undefined') {
+                let item = base.items[itemBid];
+                if (typeof item.eqSlot !== 'undefined') {
+                    // equipment
+                    let equipment = player.getEquipment();
+                    let equippedBid = equipment[item.eqSlot]; // previously equipped in that slot
+                    equipment[item.eqSlot] = item.bid;
+                    utils.inventory.removeItem(player, itemBid);
+                    if (typeof equippedBid !== 'undefined') {
+                        utils.inventory.addItem(player, equippedBid);
+                    }
+                    player.emit('equipment', equipment);
+                }
+            }
+        }
+    };
+
+    utils.equipment = {
+        uneqip: function (player, eqSlot) {
+            let equipment = player.getEquipment();
+            // addItem checks if there is enough room in inventory
+            if (typeof equipment[eqSlot] !== 'undefined' && utils.inventory.addItem(player, equipment[eqSlot])) {
+                delete equipment[eqSlot];
+                player.emit('equipment', equipment);
+            }
+        }
+    };
+
+    utils.craft = {
+        possible: function (player, craftBid) {
+            // check if chosen recipe is valid: enough inputs in inventory
+            // todo: this check should run on client side before sending request to server
+            let craft = base.crafts[craftBid];
+            return craft.inputs.every(function (input) {
+                return (input.count <= utils.inventory.countItem(player, input.bid));
+            });
+        },
+        perform: function (player, craftBid) {
+            // craft chosen recipe if it is valid
+            if (utils.craft.possible(player, craftBid)) {
+                let craft = base.crafts[craftBid];
+                player.delayedAction(function () {
+                    craft.inputs.forEach(function (input) {
+                        utils.inventory.removeItem(player, input.bid, input.count);
+                    });
+                    utils.inventory.addItem(player, craft.output.bid);
+                    player.emit('msg', 'Successful craft: ' + craft.output.name);
+                });
+            }
+        }
+    };
+
     // grid of map coordinates that works as a reference to all objects, players, mobs, bags and grounds
     // coordinates are of form grid[x][y], i.e. (column, row)
     let grid = [];
@@ -379,7 +477,6 @@ function gameServer(io) {
         }
     }
 
-
     function createPlayer(socket) {
         let x, y, cellEmpty;
         do {
@@ -405,33 +502,24 @@ function gameServer(io) {
 
         // private properties and methods
         let inventory = [];
+        let equipment = {};
         let speed = 5;
         let actionDelay = base.constants.actionDelay / speed;
 
         let onDelay = false;
         let delayTimer;
 
-        function addItem(item) {
-            if (inventory.length < base.constants.maxInventory) {
-                inventory.push(item);
-                socket.emit('inventory', inventory);
-                return true;
-            } else {
-                socket.emit('msg', 'Inventory full');
-                return false;
-            }
+        // @inventory getter: used to manipulate @inventory from outside of player object
+        // @inventory still remains a private property and is not emitted to client
+        function getInventory() {
+            return inventory;
         }
-
-        function removeItem(item) {
-            let index = inventory.indexOf(item);
-            if (index >= 0) {
-                inventory.splice(index, 1);
-                socket.emit('inventory', inventory);
-                return true;
-            } else {
-                return false;
-            }
+        player.getInventory = getInventory;
+        // @equipment getter
+        function getEquipment() {
+            return equipment;
         }
+        player.getEquipment = getEquipment;
 
         // part of the grid visible to player, that is emitted on update
         let viewport = [];
@@ -459,10 +547,21 @@ function gameServer(io) {
             updateTimer = setTimeout(updateLoop, base.constants.playerUpdateTime);
         }());
 
+        // perform action with delay: gathering, building, crafting
+        function delayedAction(callback) {
+            if (!onDelay) {
+                onDelay = true;
+                setTimeout(function () {
+                    onDelay = false;
+                    callback();
+                }, actionDelay);
+            }
+        }
+        player.delayedAction = delayedAction;
+
 
         // Inputs listener
         socket.on('input', function onInput(key) {
-            let timestamp = Date.now();
             if (!onDelay) {
                 if (key === 'e' || key === 'w' || key === 'n' || key === 's') { // move
                     let newPos = {
@@ -509,9 +608,8 @@ function gameServer(io) {
                         if (object === base.objects.tree
                             || object === base.objects.palm
                             || object === base.objects.wood) {
-                            let item = base.itemId['Wood'];
                             // only remove object if player's inventory not full
-                            if (addItem(item)) {
+                            if (utils.inventory.addItem(player, base.itemId['Wood'])) {
                                 delete grid[newPos.x][newPos.y].object;
                             }
                         }
@@ -522,9 +620,8 @@ function gameServer(io) {
                     }
                 } else if (key === 'a') { // action
                     if (typeof grid[player.x][player.y].object !== 'number') {
-                        let item = base.itemId['Wood'];
                         // only place wood if it is in inventory
-                        if (removeItem(item)) {
+                        if (utils.inventory.removeItem(player, base.itemId['Wood'])) {
                             grid[player.x][player.y].object = base.objects.wood;
                         }
                     }
@@ -537,16 +634,31 @@ function gameServer(io) {
             }
         });
 
+        // left-clicked @invSlot
+        socket.on('invUse', function onInvUse(invSlot) {
+            utils.inventory.useItem(player, invSlot);
+        });
+
+        // clicked @eqSlot
+        socket.on('unequip', function onUnequip(eqSlot) {
+            utils.equipment.uneqip(player, eqSlot);
+        });
+
         // clicked item # bagItem on the ground
         socket.on('pick', function onPick(bagItem) {
             let bag = grid[player.x][player.y].bag;
             if (typeof bag !== 'undefined') { // make sure that request is legit
                 let item = bag.items[bagItem];
                 // only add item if item with such number exists in the bag and player's inventory is not full
-                if (typeof item !== 'undefined' && addItem(item)) {
+                if (typeof item !== 'undefined' && utils.inventory.addItem(player, item)) {
                     bag.getItem(bagItem);
                 }
             }
+        });
+
+        // clicked recipe
+        socket.on('craft', function onCraft(craftBid) {
+            utils.craft.perform(player, craftBid);
         });
 
         // interrupt action loop and delete mob object from global lists
@@ -562,6 +674,9 @@ function gameServer(io) {
         addToGrid(player);
         return player;
     }
+
+
+
 
 
     // listen for connection of new clients

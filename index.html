@@ -33,7 +33,7 @@
                 top: 40px;
                 left: 0;
                 width: 236px;
-                height: 150px;
+                height: 146px;
                 border: 2px coral solid;
                 background-color: greenyellow;
             }
@@ -42,6 +42,15 @@
                 height: 32px;
                 padding: 0;
                 border: 1px blue solid;
+                cursor: pointer;
+            }
+            div.eqSlot {
+                position: absolute;
+                width: 32px;
+                height: 32px;
+                border: 1px blue solid;
+                background-color: lightgray;
+                cursor: pointer;
             }
         </style>
     </head>
@@ -93,17 +102,22 @@
                     </tr>
                 </table>
             </div>
-            <div id="panelEquips" class="tabPanel">
-                Equips
+            <div id="panelEquips" class="tabPanel" style="background-image: url(public/equipment_bg.png); background-repeat: no-repeat; background-position: center;">
+                <div id="eq0" class="eqSlot" style="left: 40px; top: 30px; background-image: url(public/eq_torso.png);"></div>
+                <div id="eq1" class="eqSlot" style="left: 40px; top: 80px; background-image: url(public/eq_legs.png);"></div>
+                <div id="eq2" class="eqSlot" style="left: 170px; top: 30px; background-image: url(public/eq_hand.png);"></div>
             </div>
             <div id="panelStats" class="tabPanel">
                 Stats
             </div>
             <div id="panelCraft" class="tabPanel">
-                Craft
+                Crafting recipes
+                <ul id="crafts" style="list-style-type: none; margin: 0;">
+                </ul>
+
             </div>
             <div id="groundContainer">On the ground:
-                <div id="ground"><img id="groundItem" style="position:absolute; left: 0; bottom: 150px; cursor: pointer;"></div>
+                <div id="ground"><img id="groundItem" style="position:absolute; left: 0; top: 190px; cursor: pointer; border: 2px gray solid"></div>
             </div>
             <div id="notifications" style="overflow: auto; height: 150px; position:absolute; left: 0; bottom: 0;">
                 Welcome to Utopia Online!<br>

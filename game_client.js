@@ -21,8 +21,9 @@ window.addEventListener('load', function clientLoader() {
     var GROUNDS = base.grounds;
 
 
-    var self, inventory;
+    var self, inventory, equipment;
     var viewport;
+    var i;
 
 
     // ----------------------
@@ -55,11 +56,14 @@ window.addEventListener('load', function clientLoader() {
                 tab: document.getElementById('tabCraft'),
                 panel: document.getElementById('panelCraft')
             }
-        }
+        },
+        crafts: document.getElementById('crafts')
     };
 
     var ui = {};
-
+    // -----------------------------------------------
+    // Switching tabs
+    // -----------------------------------------------
     ui.clickTab = function (tab) {
         // @tab must be one of @div.tabs
         if (tab !== ui.activeTab) {
@@ -75,9 +79,11 @@ window.addEventListener('load', function clientLoader() {
             ui.clickTab(div.tabs[tabName]);
         });
     });
-
     ui.activeTab = div.tabs.inv;
 
+    // -----------------------------------------------
+    // Inventory tab
+    // -----------------------------------------------
     ui.inventory = {
         update: function () {
             var i, item, slot;
@@ -92,6 +98,63 @@ window.addEventListener('load', function clientLoader() {
             }
         }
     };
+    // click events for inventory slots
+    for (i = 0; i <= 19; i += 1) {
+        document.getElementById('inv' + i).addEventListener('click', (function (slot) {
+            // this closure "remembers" particular value of @i in local variable @slot
+            return function () {
+                if (typeof inventory[slot] !== 'undefined') {
+                    socket.emit('invUse', slot);
+                }
+            }
+        }(i)));
+    }
+
+    // --------------------------
+    // Equipment tab
+    // --------------------------
+    ui.equipment = {
+        update: function () {
+            var slot, bid, url;
+            Object.keys(base.constants.eqSlots).forEach(function (slotName) {
+                slot = base.constants.eqSlots[slotName];
+                bid = equipment[slot];
+                url = 'url(public/';
+                if (typeof bid !== 'undefined') {
+                    url += base.items[bid].image;
+                } else {
+                    url += '/eq_' + slotName;
+                }
+                url += '.png)';
+                document.getElementById('eq' + slot).style.backgroundImage = url;
+            });
+        }
+    };
+    // click events for equipment slots
+    Object.keys(base.constants.eqSlots).forEach(function (slotName) {
+        var slot = base.constants.eqSlots[slotName];
+        document.getElementById('eq' + slot).addEventListener('click', function () {
+            if (typeof equipment[slot] !== 'undefined') {
+                socket.emit('unequip', slot);
+            }
+        });
+    });
+
+    // --------------------------
+    // Crafts tab
+    // --------------------------
+    // create list of recipes from base
+    base.crafts.forEach(function (craft) {
+        var newLi = document.createElement('li');
+        newLi.id = 'craft' + craft.bid;
+        newLi.addEventListener('click', function () {
+            socket.emit('craft', craft.bid);
+        });
+        newLi.style.cursor = 'pointer';
+        newLi.innerHTML = craft.output.name;
+        div.crafts.appendChild(newLi);
+    });
+
 
     // todo: make it work with multiple items in a bag
     ui.ground = {
@@ -198,6 +261,10 @@ window.addEventListener('load', function clientLoader() {
     socket.on('inventory', function onInventory(inv) {
         inventory = inv;
         ui.inventory.update();
+    });
+    socket.on('equipment', function onEquipment(eq) {
+        equipment = eq;
+        ui.equipment.update();
     });
 
     socket.on('hit', function onHit(msg) {

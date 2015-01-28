@@ -37,7 +37,12 @@ function baseClosure() {
             player: 0,
             mob: 1
         },
-        maxInventory: 20
+        maxInventory: 20,
+        eqSlots: {
+            torso: 0,
+            legs: 1,
+            hand: 2
+        }
     };
 
     constants.viewport.widthP = constants.viewport.width * constants.tile.width;
@@ -65,6 +70,22 @@ function baseClosure() {
         name: 'Leather',
         image: 'leather'
     };
+    items[2] = {
+        name: 'Leather shirt',
+        image: 'leather_shirt',
+        eqSlot: constants.eqSlots.torso
+    };
+    items[3] = {
+        name: 'Leather pants',
+        image: 'leather_pants',
+        eqSlot: constants.eqSlots.legs
+    };
+    items[4] = {
+        name: 'Wooden sword',
+        image: 'wooden_sword',
+        eqSlot: constants.eqSlots.hand
+    };
+
 
     var itemId = {}; // lookup table "name: baseId"
     items.forEach(function (item, index) {
@@ -121,7 +142,7 @@ function baseClosure() {
     };
 
     // ------------------------------------------------------------------------------
-    // Map types
+    // Object types
     // ------------------------------------------------------------------------------
     var objects = {
         tree: 0,
@@ -131,6 +152,57 @@ function baseClosure() {
         bag: 4
     };
 
+
+    // ------------------------------------------------------------------------------
+    // Crafting recipes
+    // ------------------------------------------------------------------------------
+    var crafts = [];
+    crafts[0] = {
+        output: {
+            name: 'Leather shirt'
+        },
+        inputs: [
+            {
+                name: 'Leather',
+                count: 2
+            }
+        ]
+    };
+    crafts[1] = {
+        output: {
+            name: 'Leather pants'
+        },
+        inputs: [
+            {
+                name: 'Leather',
+                count: 1
+            }
+        ]
+    };
+    crafts[2] = {
+        output: {
+            name: 'Wooden sword'
+        },
+        inputs: [
+            {
+                name: 'Wood',
+                count: 1
+            },
+            {
+                name: 'Leather',
+                count: 1
+            }
+        ]
+    };
+    // add bids
+    crafts.forEach(function (craft, index) {
+        craft.bid = index;
+        craft.output.bid = itemId[craft.output.name];
+        craft.inputs.forEach(function (input) {
+            input.bid = itemId[input.name];
+        });
+    });
+
     // global object to be exported
     return {
         constants: constants,
@@ -139,7 +211,8 @@ function baseClosure() {
         items: items,
         itemId: itemId,
         grounds: grounds,
-        objects: objects
+        objects: objects,
+        crafts: crafts
     };
 }
 
