@@ -14,7 +14,37 @@ function gameServer(io) {
     let utils = require('./utils.js');
 
     // Augment utils with server-only functions
+    utils.grid = {
+        getRandomEmptyCell: function () {
+            // Return a random cell from grid that has no characters on it (can have objects)
+            let x, y, cellEmpty;
+            do {
+                x = Math.floor(Math.random() * base.constants.world.width);
+                y = Math.floor(Math.random() * base.constants.world.height);
+                cellEmpty = (typeof grid[x][y].char === 'undefined');
+                // can still spawn on top of objects
+            } while (!cellEmpty);
+            return {
+                x: x,
+                y: y
+            }
+        },
+        cellsAround: function (center) {
+            // center = {x, y}
+            // return 4 grid cells around @center
+            let cells = utils.coordsAround(center);
+            Object.keys(cells).forEach(function (dir) {
+                cells[dir] = grid[cells[dir].x][cells[dir].y];
+            });
+            return cells;
+        }
+    };
+
+
     utils.inventory = {
+        full: function (player) {
+            return (player.getInventory().length === base.constants.maxInventory);
+        },
         countItem: function (player, itemBid) {
             let count = 0;
             player.getInventory().forEach(function (invItemBid) {
@@ -61,8 +91,7 @@ function gameServer(io) {
             let itemBid = inventory[invSlot];
             if (typeof itemBid !== 'undefined') {
                 let item = base.items[itemBid];
-                if (typeof item.eqSlot !== 'undefined') {
-                    // equipment
+                if (item.type === base.constants.itemTypes.equipment) {
                     let equipment = player.getEquipment();
                     let equippedBid = equipment[item.eqSlot]; // previously equipped in that slot
                     equipment[item.eqSlot] = item.bid;
@@ -71,8 +100,23 @@ function gameServer(io) {
                         utils.inventory.addItem(player, equippedBid);
                     }
                     player.emit('equipment', equipment);
+                } else if (item.type === base.constants.itemTypes.structure && typeof grid[player.x][player.y].object !== 'number') {
+                    utils.inventory.removeItem(player, itemBid);
+                    player.delayedAction(function () {
+                        grid[player.x][player.y].object = base.objectId[item.name];
+                    });
                 }
             }
+        },
+        dropItem: function (player, invSlot) {
+            let inventory = player.getInventory();
+            let itemBid = inventory[invSlot];
+            utils.inventory.removeItem(player, itemBid);
+            createBag({
+                x: player.x,
+                y: player.y,
+                items: [itemBid]
+            });
         }
     };
 
@@ -89,24 +133,117 @@ function gameServer(io) {
 
     utils.craft = {
         possible: function (player, craftBid) {
-            // check if chosen recipe is valid: enough inputs in inventory
+            // check if chosen recipe is valid: enough inputs in inventory, standing near required facility
             // todo: this check should run on client side before sending request to server
             let craft = base.crafts[craftBid];
-            return craft.inputs.every(function (input) {
+            let enoughInputs = craft.inputs.every(function (input) {
                 return (input.count <= utils.inventory.countItem(player, input.bid));
             });
+
+            if (typeof craft.facility !== 'undefined') {
+                let around = utils.grid.cellsAround(player);
+                let noFacilityNear = Object.keys(around).every(function (dir) {
+                    return around[dir].object !== craft.facility;
+                });
+                return (enoughInputs && !noFacilityNear);
+            } else {
+                return enoughInputs;
+            }
         },
         perform: function (player, craftBid) {
             // craft chosen recipe if it is valid
-            if (utils.craft.possible(player, craftBid)) {
-                let craft = base.crafts[craftBid];
+            let craft = base.crafts[craftBid];
+            let req = {
+                skill: craft.skill,
+                min: craft.minLevel
+            };
+            if (utils.craft.possible(player, craftBid) && utils.skill.canUse(player, req)) {
+                player.emit('msg', 'Trying to craft ' + craft.output.name + '...')
                 player.delayedAction(function () {
                     craft.inputs.forEach(function (input) {
                         utils.inventory.removeItem(player, input.bid, input.count);
                     });
-                    utils.inventory.addItem(player, craft.output.bid);
-                    player.emit('msg', 'Successful craft: ' + craft.output.name);
+                    if (utils.skill.use(player, req)) {
+                        utils.inventory.addItem(player, craft.output.bid);
+                        player.emit('msg', 'Success!');
+                    } else {
+                        player.emit('msg', 'Fail!');
+                    }
                 });
+            }
+        }
+    };
+
+    utils.skill = {
+        canUse: function (player, req) {
+            // req = {skill, min}
+            if (player.getStats()[req.skill] < req.min) {
+                player.emit('msg', 'Your ' + req.skill + ' is not high enough.');
+                return false;
+            } else {
+                return true;
+            }
+        },
+        use: function (player, req) {
+            // req = {skill, min}
+            // Tests whether player succeeds or not at @skill that requires level @min
+            // Success probability = (Player skill level - minimum level)%
+            // Increases used skill level with some probability
+            // Increase probability = (100 - Player skill level)%, if success
+            // 0.5 * (100 - Player skill level)%, if fail
+            let stats = player.getStats();
+            let success = (Math.random() < 0.01 * (stats[req.skill] - req.min));
+            let increaseP = 1 - 0.01 * stats[req.skill];
+            increaseP *= (success ? 1 : 0.5);
+            if (Math.random() < increaseP) {
+                utils.skill.increase(player, req.skill);
+            }
+            return success;
+        },
+        increase: function (player, skill) {
+            let stats = player.getStats();
+            if (stats[skill] < 100) {
+                stats[skill] += 1;
+                player.emit('stats', stats);
+                player.emit('msg', 'You feel better at ' + skill);
+            }
+        }
+    };
+
+    utils.combat = {
+        hit: function (attacker, defender) {
+            let aStats = attacker.getStats();
+            let dStats = defender.getStats();
+
+            // determine if the hit is successful
+            let success = (aStats.fighting + 100 * Math.random() > dStats.fighting + 100 * Math.random());
+
+            // attacker's fighting skill might increase
+            if (attacker.type === base.constants.charTypes.player) {
+                let increaseP = 1 - 0.01 * aStats.fighting;
+                increaseP *= (success ? 1 : 0.5);
+                if (Math.random() < increaseP) {
+                    utils.skill.increase(attacker, 'fighting');
+                }
+            }
+
+            // damage is dealt
+            if (success) {
+                dStats.hp -= 1;
+                // todo: broadcast hit event to other players in view
+                if (defender.type === base.constants.charTypes.player) {
+                    defender.emit('hit', defender);
+                    defender.emit('stats', dStats);
+                } else if (attacker.type === base.constants.charTypes.player) {
+                    attacker.emit('hit', defender);
+                }
+
+                if (dStats.hp <= 0) {
+                    defender.die();
+                    if (defender.type === base.constants.charTypes.player) {
+                        io.emit('msg', defender.name + ' was killed by ' + attacker.name);
+                    }
+                }
             }
         }
     };
@@ -236,12 +373,12 @@ function gameServer(io) {
         grid.forEach(function (column) {
             column.forEach(function (cell) {
                 if (cell.object === null && Math.random() < 0.02) {
-                    if (cell.ground === base.grounds.grass) {
-                        cell.object = base.objects.tree;
-                    } else if (cell.ground === base.grounds.sand) {
-                        cell.object = base.objects.palm;
+                    if (cell.ground === base.groundId['Grass']) {
+                        cell.object = base.objectId['Tree'];
+                    } else if (cell.ground === base.groundId['Sand']) {
+                        cell.object = base.objectId['Palm'];
                     }
-                } else if (cell.object === base.objects.wood && Math.random() < 0.02) {
+                } else if (cell.object === base.objectId['Wood'] && Math.random() < 0.02) {
                     delete cell.object;
                 }
             });
@@ -303,26 +440,43 @@ function gameServer(io) {
             return;
         }
 
-        let x, y, cellEmpty;
-        do {
-            x = Math.floor(Math.random() * base.constants.world.width);
-            y = Math.floor(Math.random() * base.constants.world.height);
-            cellEmpty = (typeof grid[x][y].char === 'undefined');
-            // can still spawn on top of objects
-        } while (!cellEmpty);
+        let pos = utils.grid.getRandomEmptyCell();
 
-        let mob = Object.create(base.mobs[spawnId]);
-        mob.type = base.constants.charTypes.mob;
-        mob.x = x;
-        mob.y = y;
-        mob.bid = spawnId; // rewrite property from database, so it becomes own property and is transferred to clients
-        mob.tint = (0.5 + 0.5 * Math.random()) * 0xFFFFFF;
+        // public attributes
+        let pub = {
+            id: nextMobId,
+            bid: spawnId,
+            name: base.mobs[spawnId].name,
+            type: base.constants.charTypes.mob,
+            x: pos.x,
+            y: pos.y,
+            tint: (0.5 + 0.5 * Math.random()) * 0xFFFFFF
+        };
+        nextMobId += 1;
 
-        let actionDelay = base.constants.actionDelay / mob.speed;
+        // private attributes
+        let prv = {
+            stats: {
+                hp: base.mobs[spawnId].stats.hp,
+                speed: base.mobs[spawnId].stats.speed,
+                fighting: base.mobs[spawnId].stats.fighting
+            },
+            aggressive: base.mobs[spawnId].aggressive,
+            radius: base.mobs[spawnId].radius,
+            actionDelay: base.constants.actionDelay
+        };
+        prv.actionDelay /= prv.stats.speed;
 
-        // find empty walkable tiles around self
+        // getters for some private attributes
+        function getStats() {
+            return prv.stats;
+        }
+        pub.getStats = getStats;
+
+
         function findEmptyTilesAround() {
-            let emptyTiles = utils.coordsAround(mob);
+            // find empty walkable tiles around self
+            let emptyTiles = utils.coordsAround(pub);
 
             Object.keys(emptyTiles).forEach(function (dir) {
                 let xy = emptyTiles[dir];
@@ -344,14 +498,14 @@ function gameServer(io) {
             if (count > 0) {
                 // choose random direction
                 let newPos = moves[names[Math.floor(Math.random() * count)]];
-                moveOnGrid(mob, newPos);
+                moveOnGrid(pub, newPos);
             }
         }
 
         // move 1 tile towards specified destination
         // naive path-finding algorithm
         function moveTowards(destination) {
-            let shortestDistance = utils.vector(mob, destination).norm;
+            let shortestDistance = utils.vector(pub, destination).norm;
             let stayOnTile = true; // if all possible moves lead away from destination, don't move
             let newPos;
 
@@ -368,20 +522,20 @@ function gameServer(io) {
             });
 
             if (!stayOnTile) {
-                moveOnGrid(mob, newPos);
+                moveOnGrid(pub, newPos);
             }
         }
 
         // choose and perform an action: move or attack
         function action() {
-            if (mob.aggressive) {
+            if (prv.aggressive) {
                 // attack if there is a player nearby
-                let around = utils.coordsAround(mob);
+                let around = utils.coordsAround(pub);
                 let noAttack = Object.keys(around).every(function (dir) {
                     let xy = around[dir];
                     let other = grid[xy.x][xy.y].char;
                     if (typeof other !== 'undefined' && other.type === base.constants.charTypes.player) {
-                        other.emit('hit', mob.name + ' hits you');
+                        utils.combat.hit(pub, other);
                         return false; // break .every loop
                     } else {
                         return true; // continue .every loop
@@ -392,8 +546,8 @@ function gameServer(io) {
                     // move to the first player found within mob's radius
                     let noPlayerInRadius = Object.keys(players).every(function (pid) {
                         let player = players[pid];
-                        let distance = utils.vector(mob, player).norm;
-                        if (distance <= mob.radius) {
+                        let distance = utils.vector(pub, player).norm;
+                        if (distance <= prv.radius) {
                             moveTowards(player);
                             return false; // exit .every loop
                         }
@@ -409,25 +563,42 @@ function gameServer(io) {
             }
         }
 
+        function die() {
+            // mob is removed from grid and drops loot
+            let loot = [];
+            // generate items from random drop table
+            base.mobs[pub.bid].drops.forEach(function (item) {
+                if (Math.random() < item.prob) {
+                    loot.push(item.bid);
+                }
+            });
+            if (loot.length > 0) {
+                createBag({
+                    x: pub.x,
+                    y: pub.y,
+                    items: loot
+                });
+            }
+            destroy();
+        }
+        pub.die = die;
+
         // start action loop when mob is created
-        let actionTimer = setTimeout(actionLoop, actionDelay);
+        let actionTimer = setTimeout(actionLoop, prv.actionDelay);
         function actionLoop() {
             action();
-            actionTimer = setTimeout(actionLoop, actionDelay);
+            actionTimer = setTimeout(actionLoop, prv.actionDelay);
         }
 
         // interrupt action loop and delete mob object from global lists
         function destroy() {
             clearTimeout(actionTimer);
-            removeFromGrid(mob);
+            removeFromGrid(pub);
         }
-
-        mob.destroy = destroy;
+        pub.destroy = destroy;
 
         // add new mob object to global lists
-        mob.id = nextMobId;
-        nextMobId += 1;
-        addToGrid(mob);
+        addToGrid(pub);
     }
 
     // Keep mobs population at the specified maximum
@@ -438,58 +609,64 @@ function gameServer(io) {
         }
     }
 
-    // constructor for bags on the ground
+
     function createBag(spec) {
-        let bag = {
-            x: spec.x,
-            y: spec.y,
-            items: []
-        };
+        // spec = {x, y, items}
+        // constructor for bags on the ground
+        // bags disappear after a certain time
+        // adding/removing items restarts the timer
+        // If there is already a bag there, items are added to it.
 
-        // generate items from random drop table
-        spec.items.forEach(function (item) {
-            if (Math.random() < item.prob) {
-                bag.items.push(item.bid);
-            }
-        });
-
+        let bag = grid[spec.x][spec.y].bag;
         let lifetimeTimer;
+
+        if (typeof bag !== 'undefined') {
+            bag.addItems(spec.items);
+        } else {
+            bag = {
+                x: spec.x,
+                y: spec.y,
+                items: spec.items
+            };
+            bag.getItem = getItem;
+            bag.addItems = addItems;
+            lifetimeTimer = setTimeout(destroy, base.constants.bagLifetime);
+            grid[bag.x][bag.y].bag = bag;
+        }
 
         function destroy() {
             clearTimeout(lifetimeTimer);
             delete grid[bag.x][bag.y].bag;
         }
 
+        function renewTimer() {
+            clearTimeout(lifetimeTimer);
+            lifetimeTimer = setTimeout(destroy, base.constants.bagLifetime);
+        }
+
         function getItem(itemNumber) {
             bag.items.splice(itemNumber, 1);
             if (bag.items.length === 0) {
                 destroy();
+            } else {
+                renewTimer();
             }
         }
 
-        // add public methods
-        bag.getItem = getItem;
-
-        // add new bag object to global lists
-        if (bag.items.length > 0) {
-            lifetimeTimer = setTimeout(destroy, base.constants.bagLifetime);
-            grid[bag.x][bag.y].bag = bag;
+        function addItems(items) {
+            // @items: array of item bids
+            bag.items = bag.items.concat(items);
+            renewTimer();
         }
     }
 
     function createPlayer(socket) {
-        let x, y, cellEmpty;
-        do {
-            x = Math.floor(Math.random() * base.constants.world.width);
-            y = Math.floor(Math.random() * base.constants.world.height);
-            cellEmpty = (typeof grid[x][y].char === 'undefined');
-            // can still spawn on top of objects
-        } while (!cellEmpty);
+        let pos = utils.grid.getRandomEmptyCell();
 
         // public properties and methods
         let player = {
-            x: x,
-            y: y,
+            x: pos.x,
+            y: pos.y,
             tint: (0.5 + 0.5 * Math.random()) * 0xFFFFFF,
             name: 'Player ' + Math.round(Math.random() * 100),
             type: base.constants.charTypes.player,
@@ -503,6 +680,13 @@ function gameServer(io) {
         // private properties and methods
         let inventory = [];
         let equipment = {};
+        let stats = {
+            hp: base.constants.maxHp,
+            speed: 5,
+            gathering: 50,
+            crafting: 50,
+            fighting: 0
+        };
         let speed = 5;
         let actionDelay = base.constants.actionDelay / speed;
 
@@ -520,6 +704,11 @@ function gameServer(io) {
             return equipment;
         }
         player.getEquipment = getEquipment;
+        // @stats getter
+        function getStats() {
+            return stats;
+        }
+        player.getStats = getStats;
 
         // part of the grid visible to player, that is emitted on update
         let viewport = [];
@@ -559,9 +748,36 @@ function gameServer(io) {
         }
         player.delayedAction = delayedAction;
 
+        function die() {
+            // Lose all inventory items and equipment from a randomly chosen slot.
+            // Player is then taken to a random spot in the map.
+            let loot = inventory.concat(base.itemId["Player's ear"]);
+            inventory = [];
+            let loseSlot = Math.floor(Math.random() * Object.keys(base.constants.eqSlots).length);
+            if (typeof equipment[loseSlot] !== 'undefined') {
+                loot.push(equipment[loseSlot]);
+                delete equipment[loseSlot];
+            }
+            createBag({
+                x: player.x,
+                y: player.y,
+                items: loot
+            });
+
+            stats.hp = base.constants.maxHp;
+            moveOnGrid(player, utils.grid.getRandomEmptyCell());
+            updateViewport();
+            socket.emit('inventory', inventory);
+            socket.emit('equipment', equipment);
+            socket.emit('stats', stats);
+            socket.emit('msg', 'Oh dear, you are dead!')
+        }
+        player.die = die;
+
 
         // Inputs listener
         socket.on('input', function onInput(key) {
+            // walking and attacking are instant, but other actions require delay
             if (!onDelay) {
                 if (key === 'e' || key === 'w' || key === 'n' || key === 's') { // move
                     let newPos = {
@@ -586,57 +802,68 @@ function gameServer(io) {
 
                     utils.wrapOverWorld(newPos);
 
-                    let object = grid[newPos.x][newPos.y].object;
+                    let objectBid = grid[newPos.x][newPos.y].object;
                     let other = grid[newPos.x][newPos.y].char;
 
                     if (typeof other !== 'undefined') {
                         // attack if there is another char at destination
-                        socket.emit('hit', 'You hit ' + other.name);
-
-                        if (other.type === base.constants.charTypes.player) {
-                            other.emit('hit', player.name + ' hits you!');
-                        } else if (other.type === base.constants.charTypes.mob) {
-                            createBag({
-                                x: newPos.x,
-                                y: newPos.y,
-                                items: other.drops
-                            });
-                            other.destroy();
-                        }
-                    } else if (typeof object === 'number') {
+                        utils.combat.hit(player, other);
+                        onDelay = true;
+                        delayTimer = setTimeout(function () {
+                            onDelay = false;
+                        }, actionDelay);
+                    } else if (typeof objectBid === 'number') {
+                        let object = base.objects[objectBid];
                         // interact if there is object at destination
-                        if (object === base.objects.tree
-                            || object === base.objects.palm
-                            || object === base.objects.wood) {
-                            // only remove object if player's inventory not full
-                            if (utils.inventory.addItem(player, base.itemId['Wood'])) {
-                                delete grid[newPos.x][newPos.y].object;
+                        if (object.type === base.constants.objectTypes.structure) {
+                            if (!utils.inventory.full(player)) {
+                                delayedAction(function () {
+                                    utils.inventory.addItem(player, base.itemId[object.name]);
+                                    delete grid[newPos.x][newPos.y].object;
+                                });
+                            }
+                        } else if (object.type === base.constants.objectTypes.node) {
+                            let req = {
+                                skill: object.skill,
+                                min: object.minLevel
+                            };
+                            if (!utils.inventory.full(player) && utils.skill.canUse(player, req)) {
+                                player.emit('msg', 'You try ' + object.skill + '...');
+                                delayedAction(function () {
+                                    // give item if skill succeeds
+                                    if (utils.skill.use(player, req)) {
+                                        utils.inventory.addItem(player, object.output);
+                                        player.emit('msg', 'Success!');
+                                    } else{
+                                        player.emit('msg', 'Fail!');
+                                    }
+                                    // todo: probability to destroy object depends on player's skill
+                                    if (Math.random() < 0.2) {
+                                        delete grid[newPos.x][newPos.y].object;
+                                    }
+                                });
                             }
                         }
                     } else {
                         // walk if destination cell is empty
                         moveOnGrid(player, newPos);
                         updateViewport();
-                    }
-                } else if (key === 'a') { // action
-                    if (typeof grid[player.x][player.y].object !== 'number') {
-                        // only place wood if it is in inventory
-                        if (utils.inventory.removeItem(player, base.itemId['Wood'])) {
-                            grid[player.x][player.y].object = base.objects.wood;
-                        }
+                        onDelay = true;
+                        delayTimer = setTimeout(function () {
+                            onDelay = false;
+                        }, actionDelay);
                     }
                 }
-
-                onDelay = true;
-                delayTimer = setTimeout(function () {
-                    onDelay = false;
-                }, actionDelay);
             }
         });
 
         // left-clicked @invSlot
         socket.on('invUse', function onInvUse(invSlot) {
             utils.inventory.useItem(player, invSlot);
+        });
+        // right-clicked @invSlot
+        socket.on('drop', function onDrop(invSlot) {
+            utils.inventory.dropItem(player, invSlot);
         });
 
         // clicked @eqSlot
@@ -667,7 +894,6 @@ function gameServer(io) {
             clearTimeout(updateTimer);
             removeFromGrid(player);
         }
-
         player.destroy = destroy;
 
         // add new player object to global lists and return player object
@@ -681,9 +907,11 @@ function gameServer(io) {
 
     // listen for connection of new clients
     io.on('connection', function onConnection(socket) {
-        socket.emit('connected', {id: socket.id});
-
         let player = createPlayer(socket);
+        player.emit('connected', {id: player.id});
+        player.emit('inventory', player.getInventory());
+        player.emit('equipment', player.getEquipment());
+        player.emit('stats', player.getStats());
 
         let playersCount = Object.keys(players).length;
         console.log('Player connected: ' + socket.id);

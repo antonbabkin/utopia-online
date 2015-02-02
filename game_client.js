@@ -37,7 +37,7 @@ window.addEventListener('load', function clientLoader() {
         panel: document.getElementById('uiPanel'),
         debug: document.getElementById('debug'),
         notifications: document.getElementById('notifications'),
-        groundContainer: document.getElementById('groundContainer'),
+        groundPanel: document.getElementById('groundPanel'),
         ground: document.getElementById('ground'),
         tabs: {
             inv: {
@@ -100,14 +100,26 @@ window.addEventListener('load', function clientLoader() {
     };
     // click events for inventory slots
     for (i = 0; i <= 19; i += 1) {
-        document.getElementById('inv' + i).addEventListener('click', (function (slot) {
+        document.getElementById('inv' + i).addEventListener('contextmenu', (function (slot) {
+            // right click
             // this closure "remembers" particular value of @i in local variable @slot
-            return function () {
+            return function (event) {
+                event.preventDefault();
+                if (typeof inventory[slot] !== 'undefined') {
+                    socket.emit('drop', slot);
+                }
+            }
+        }(i)), false);
+        document.getElementById('inv' + i).addEventListener('click', (function (slot) {
+            // left click
+            // this closure "remembers" particular value of @i in local variable @slot
+            return function (event) {
                 if (typeof inventory[slot] !== 'undefined') {
                     socket.emit('invUse', slot);
                 }
             }
-        }(i)));
+        }(i)), false);
+
     }
 
     // --------------------------
@@ -145,34 +157,113 @@ window.addEventListener('load', function clientLoader() {
     // --------------------------
     // create list of recipes from base
     base.crafts.forEach(function (craft) {
-        var newLi = document.createElement('li');
-        newLi.id = 'craft' + craft.bid;
-        newLi.addEventListener('click', function () {
-            socket.emit('craft', craft.bid);
+        // todo: add "craft all" button
+        var liCraft = document.createElement('li');
+        var pName = document.createElement('p');
+        var pInfo = document.createElement('p');
+        //var spanA = document.createElement('span');
+        var span1 = document.createElement('span');
+        liCraft.style.listStyleType = 'disc';
+        pName.innerHTML = craft.output.name;
+        pName.style.cursor = 'pointer';
+        //spanA.innerHTML = 'A';
+        span1.innerHTML = '1';
+        pInfo.style.display = 'none';
+        pInfo.innerHTML = 'Skill: ' + craft.skill + ', level: ' + craft.minLevel + '<br>';
+        if (typeof craft.facility !== 'undefined') {
+            pInfo.innerHTML += 'Facility: <img src="public/' + base.objects[craft.facility].image + '.png"><br>';
+        }
+        craft.inputs.forEach(function (input, index) {
+            pInfo.innerHTML += '<img src="public/' + base.items[input.bid].image + '.png">';
+            pInfo.innerHTML += 'x' + input.count;
+            pInfo.innerHTML += (index < craft.inputs.length - 1 ? ' + ' : ' = ');
         });
-        newLi.style.cursor = 'pointer';
-        newLi.innerHTML = craft.output.name;
-        div.crafts.appendChild(newLi);
+        pInfo.innerHTML += '<img src="public/' + base.items[craft.output.bid].image + '.png">';
+
+        span1.addEventListener('click', function (event) {
+            socket.emit('craft', craft.bid);
+            event.stopPropagation();
+        }, false);
+        pName.addEventListener('click', function () {
+            if (pInfo.style.display === 'none') {
+                pInfo.style.display = '';
+                liCraft.style.listStyleType = 'circle';
+            } else {
+                pInfo.style.display = 'none';
+                liCraft.style.listStyleType = 'disc';
+            }
+        }, false);
+
+        pName.appendChild(span1);
+        liCraft.appendChild(pName);
+        liCraft.appendChild(pInfo);
+        div.crafts.appendChild(liCraft);
     });
 
-
-    // todo: make it work with multiple items in a bag
+    // --------------------------
+    // Bag on the ground
+    // --------------------------
     ui.ground = {
-        item: document.getElementById('groundItem'),
+        slot0: 0, // bag item in the left-most slot of the panel, used for scrolling through bags with more than 3 items
+        left: document.getElementById('groundLeftArrow'),
+        right: document.getElementById('groundRightArrow'),
         update: function () {
+            var i, slot, item;
             var bag = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag;
             if (typeof bag !== 'undefined') {
-                div.groundContainer.style.display = 'initial';
-                ui.ground.item.src = 'public/' + base.items[bag.items[0]].image + '.png';
+                div.groundPanel.style.display = '';
+                for (i = 0; i <= 2; i += 1) {
+                    slot = document.getElementById('ground' + i);
+                    item = bag.items[ui.ground.slot0 + i];
+                    if (typeof item !== 'undefined') {
+                        slot.style.backgroundImage = 'url(public/' + base.items[item].image + '.png)';
+                    } else {
+                        slot.style.backgroundImage = '';
+                    }
+                }
+                if (bag.items.length > 3) {
+                    ui.ground.left.style.display = '';
+                    ui.ground.right.style.display = '';
+                } else {
+                    ui.ground.slot0 = 0;
+                    ui.ground.left.style.display = 'none';
+                    ui.ground.right.style.display = 'none';
+                }
             } else {
-                div.groundContainer.style.display = 'none';
+                ui.ground.slot0 = 0;
+                div.groundPanel.style.display = 'none';
             }
         }
     };
-    ui.ground.item.addEventListener('click', function () {
-        socket.emit('pick', 0);
+    // click events for ground bag slots
+    for (i = 0; i <= 2; i += 1) {
+        document.getElementById('ground' + i).addEventListener('click', (function (slot) {
+            // this closure "remembers" particular value of @i in local variable @slot
+            return function () {
+                var bag = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag;
+                if (typeof bag !== 'undefined' && typeof bag.items[ui.ground.slot0 + slot] !== 'undefined') {
+                    socket.emit('pick', ui.ground.slot0 + slot);
+                }
+            }
+        }(i)));
+    }
+    // click left-right arrows
+    ui.ground.left.addEventListener('click', function () {
+        if (ui.ground.slot0 > 0) {
+            ui.ground.slot0 -= 3;
+            ui.ground.update();
+        }
+    });
+    ui.ground.right.addEventListener('click', function () {
+        if (ui.ground.slot0 + 3 < viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag.items.length) {
+            ui.ground.slot0 += 3;
+            ui.ground.update();
+        }
     });
 
+    // --------------------------
+    // Notification field
+    // --------------------------
     ui.notifications = {
         push: function (msg) {
             div.notifications.innerHTML += '<br>' + msg;
@@ -205,21 +296,18 @@ window.addEventListener('load', function clientLoader() {
 
 
     var textures = {
-        ground: {},
-        objects: {},
+        grounds: [],
+        objects: [],
+        mobs: [],
         hero: PIXI.Texture.fromImage('public/hero.png'),
-        mobs: {}
+        bag: PIXI.Texture.fromImage('public/bag.png')
     };
-    textures.ground[GROUNDS.grass] = PIXI.Texture.fromImage('public/grass.png');
-    textures.ground[GROUNDS.sand] = PIXI.Texture.fromImage('public/sand.png');
-    textures.objects[OBJECTS.tree] = PIXI.Texture.fromImage('public/tree.png');
-    textures.objects[OBJECTS.palm] = PIXI.Texture.fromImage('public/palm.png');
-    textures.objects[OBJECTS.rock] = PIXI.Texture.fromImage('public/rock.png');
-    textures.objects[OBJECTS.wood] = PIXI.Texture.fromImage('public/wood.png');
-    textures.bag = PIXI.Texture.fromImage('public/bag.png');
-    base.mobs.forEach(function (mob) {
-        textures.mobs[mob.bid] = PIXI.Texture.fromImage('public/' + mob.image +'.png');
+    ['grounds', 'objects', 'mobs'].forEach(function (type) {
+        base[type].forEach(function (unit) {
+            textures[type][unit.bid] = PIXI.Texture.fromImage('public/' + unit.image +'.png');
+        });
     });
+
 
     // 2-dim array containers for sprites
     var sprites = {
@@ -247,7 +335,7 @@ window.addEventListener('load', function clientLoader() {
         console.log('Connection established, client id: ' + data.id);
     });
 
-    socket.on('msg', function (msg) {
+    socket.on('msg', function onMsg(msg) {
         ui.notifications.push(msg);
     });
 
@@ -266,13 +354,20 @@ window.addEventListener('load', function clientLoader() {
         equipment = eq;
         ui.equipment.update();
     });
+    socket.on('stats', function onStats(st) {
+        Object.keys(st).forEach(function (statName) {
+            document.getElementById('stat_' + statName).innerHTML = st[statName];
+        });
+    });
 
-    socket.on('hit', function onHit(msg) {
+    socket.on('hit', function onHit(char) {
+        // todo: visual effect for hit
+        ui.notifications.push(char.name + ' is hit!');
         sounds.play(sounds.hit);
-        ui.notifications.push(msg);
     });
 
     // Check ping every 5 seconds
+    // @latency: time it takes to send data to server and back
     var pingTime, latency;
 
     (function ping() {
@@ -288,7 +383,7 @@ window.addEventListener('load', function clientLoader() {
 
     // create PIXI sprites or update their properties
     function updateViewport() {
-        // only update if connection established and at least one world state received from server
+        // only update if connection established and at least one viewport state received from server
         if (typeof viewport === 'undefined') {
             return;
         }
@@ -302,13 +397,13 @@ window.addEventListener('load', function clientLoader() {
                 // all cells have this attribute of type "number"
                 sprite = sprites.ground[i][j];
                 if (typeof sprite !== 'object') {
-                    sprite = new PIXI.Sprite(textures.ground[cell.ground]);
+                    sprite = new PIXI.Sprite(textures.grounds[cell.ground]);
                     sprite.position.x = i * CONSTANTS.tile.width;
                     sprite.position.y = j * CONSTANTS.tile.height;
                     stage.addChild(sprite);
                     sprites.ground[i][j] = sprite;
                 } else {
-                    sprite.texture = textures.ground[cell.ground];
+                    sprite.texture = textures.grounds[cell.ground];
                 }
 
                 // objects
@@ -451,14 +546,9 @@ window.addEventListener('load', function clientLoader() {
             e.preventDefault();
             key = 'e';
             break;
-        case KEYBOARD.space:
-            key = 'a';
-            break;
         }
-
         socket.emit('input', key);
-
-    }, false);
+    });
 
 
 }, false);

@@ -52,6 +52,30 @@
                 background-color: lightgray;
                 cursor: pointer;
             }
+            div#groundPanel {
+                position: absolute;
+                top: 190px;
+                left: 0;
+                width: 236px;
+                height: 46px;
+                border: 2px coral solid;
+                background-color: greenyellow;
+            }
+            ul#crafts span {
+                border: 1px coral solid;
+                margin: 1px 0px 0px 1px;
+                float: right;
+                display: inline-block;
+                width: 18px;
+                height: 17px;
+                text-align: center;
+            }
+            ul#crafts p {
+                margin: 0;
+            }
+            ul#crafts img {
+                vertical-align: middle;
+            }
         </style>
     </head>
 
@@ -65,10 +89,10 @@
                 <img src="public/hero.png">
             </div>
             <div id="tabStats" class="tab" style="left: 120px;">
-                <img src="public/sand.png">
+                <img src="public/stats.png">
             </div>
             <div id="tabCraft" class="tab" style="left: 180px;">
-                <img src="public/wood.png">
+                <img src="public/hammer.png">
             </div>
             <div id="panelInv" class="tabPanel" style="z-index: 1;">
                 <table style="margin: auto;">
@@ -108,20 +132,36 @@
                 <div id="eq2" class="eqSlot" style="left: 170px; top: 30px; background-image: url(public/eq_hand.png);"></div>
             </div>
             <div id="panelStats" class="tabPanel">
-                Stats
+                <div style="float: left; width: 50%;">
+                    <p style="text-align: center;">Attributes</p>
+                    <p>HP: <span id="stat_hp"></span></p>
+                    <p>Speed: <span id="stat_speed"></span></p>
+                </div>
+                <div style="float: right; width: 50%;">
+                    <p style="text-align: center;">Skills</p>
+                    <p>Gathering: <span id="stat_gathering"></span></p>
+                    <p>Crafting: <span id="stat_crafting"></span></p>
+                    <p>Fighting: <span id="stat_fighting"></span></p>
+                </div>
             </div>
-            <div id="panelCraft" class="tabPanel">
-                Crafting recipes
-                <ul id="crafts" style="list-style-type: none; margin: 0;">
+            <div id="panelCraft" class="tabPanel" style="overflow: auto;">
+                <ul id="crafts" style="list-style-type: none; margin: 0; padding: 0 20px 0 20px;">
                 </ul>
 
             </div>
-            <div id="groundContainer">On the ground:
-                <div id="ground"><img id="groundItem" style="position:absolute; left: 0; top: 190px; cursor: pointer; border: 2px gray solid"></div>
+            <div id="groundPanel">
+                <table style="margin: auto;">
+                    <tr>
+                        <td id="groundLeftArrow" class="invSlot" style="border: 0; background-image: url(public/left_arrow.png);"></td>
+                        <td id="ground0" class="invSlot"></td>
+                        <td id="ground1" class="invSlot"></td>
+                        <td id="ground2" class="invSlot"></td>
+                        <td id="groundRightArrow" class="invSlot" style="border: 0; background-image: url(public/right_arrow.png);"></td>
+                    </tr>
+                </table>
             </div>
             <div id="notifications" style="overflow: auto; height: 150px; position:absolute; left: 0; bottom: 0;">
-                Welcome to Utopia Online!<br>
-                WASD to move. SPACEBAR to place wood. Walk into tree or wood to remove it.
+                Welcome to Utopia Online!
             </div>
         </div>
         <div id="debug" style="float: right;"></div>

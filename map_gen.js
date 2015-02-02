@@ -16,17 +16,17 @@ for (let x = 0; x < base.constants.world.width; x += 1) {
     for (let y = 0; y < base.constants.world.height; y += 1) {
         map[x][y] = {};
         if (Math.random() < 0.3) {
-            map[x][y].ground = base.grounds.sand;
+            map[x][y].ground = base.groundId['Sand'];
             if (Math.random() < 0.1) {
-                map[x][y].object = base.objects.palm;
+                map[x][y].object = base.objectId['Palm'];
             }
         } else {
-            map[x][y].ground = base.grounds.grass;
+            map[x][y].ground = base.groundId['Grass'];
             let r = Math.random();
             if (r < 0.1) {
-                map[x][y].object = base.objects.rock;
+                map[x][y].object = base.objectId['Rock'];
             } else if (r < 0.3) {
-                map[x][y].object = base.objects.tree;
+                map[x][y].object = base.objectId['Tree'];
             }
         }
     }
