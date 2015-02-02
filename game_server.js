@@ -683,8 +683,8 @@ function gameServer(io) {
         let stats = {
             hp: base.constants.maxHp,
             speed: 5,
-            gathering: 50,
-            crafting: 50,
+            gathering: 0,
+            crafting: 0,
             fighting: 0
         };
         let speed = 5;
