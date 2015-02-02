@@ -683,9 +683,9 @@ function gameServer(io) {
         let stats = {
             hp: base.constants.maxHp,
             speed: 5,
-            gathering: 0,
-            crafting: 0,
-            fighting: 0
+            gathering: 100,
+            crafting: 100,
+            fighting: 100
         };
         let speed = 5;
         let actionDelay = base.constants.actionDelay / speed;
