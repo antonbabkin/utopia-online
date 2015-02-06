@@ -234,7 +234,8 @@ function gameServer(io) {
                 if (defender.type === base.constants.charTypes.player) {
                     defender.emit('hit', defender);
                     defender.emit('stats', dStats);
-                } else if (attacker.type === base.constants.charTypes.player) {
+                }
+                if (attacker.type === base.constants.charTypes.player) {
                     attacker.emit('hit', defender);
                 }
 

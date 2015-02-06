@@ -23,7 +23,7 @@ window.addEventListener('load', function clientLoader() {
 
     var self, inventory, equipment;
     var viewport;
-    var i;
+    var i, j;
 
 
     // ----------------------
@@ -287,44 +287,6 @@ window.addEventListener('load', function clientLoader() {
         }
     };
 
-    // -------------------------
-    // PIXI
-    // -------------------------
-    var stage = new PIXI.Stage(0xc8f040);
-    var renderer = PIXI.autoDetectRenderer(CONSTANTS.viewport.widthP, CONSTANTS.viewport.heightP);
-    div.canvas.appendChild(renderer.view);
-
-
-    var textures = {
-        grounds: [],
-        objects: [],
-        mobs: [],
-        hero: PIXI.Texture.fromImage('public/hero.png'),
-        bag: PIXI.Texture.fromImage('public/bag.png')
-    };
-    ['grounds', 'objects', 'mobs'].forEach(function (type) {
-        base[type].forEach(function (unit) {
-            textures[type][unit.bid] = PIXI.Texture.fromImage('public/' + unit.image +'.png');
-        });
-    });
-
-
-    // 2-dim array containers for sprites
-    var sprites = {
-        ground: [],
-        objects: [],
-        bags: [],
-        chars: []
-    };
-    (function () {
-        var i;
-        for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
-            Object.keys(sprites).forEach(function (elem) {
-                sprites[elem][i] = [];
-            });
-        }
-    }());
-
 
     // -------------------------
     // Listen to server events
@@ -380,8 +342,53 @@ window.addEventListener('load', function clientLoader() {
         latency = Date.now() - pingTime;
     });
 
+    // -------------------------
+    // PIXI
+    // -------------------------
+    var stage = new PIXI.Stage(0xc8f040);
+    var renderer = PIXI.autoDetectRenderer(CONSTANTS.viewport.widthP, CONSTANTS.viewport.heightP);
+    div.canvas.appendChild(renderer.view);
 
-    // create PIXI sprites or update their properties
+
+    var textures = {
+        grounds: [],
+        objects: [],
+        mobs: [],
+        hero: PIXI.Texture.fromImage('public/hero.png'),
+        bag: PIXI.Texture.fromImage('public/bag.png')
+    };
+    ['grounds', 'objects', 'mobs'].forEach(function (type) {
+        base[type].forEach(function (unit) {
+            textures[type][unit.bid] = PIXI.Texture.fromImage('public/' + unit.image +'.png');
+        });
+    });
+
+
+    // 2-dim grid for PIXI sprites
+    var spriteTypes = [
+        'ground',
+        'object',
+        'bag',
+        'char'
+    ];
+    var sprites = [], sprite;
+    // fill grid with PIXI sprites for each type
+    for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
+        sprites[i] = [];
+        for (j = 0; j < CONSTANTS.viewport.height; j += 1) {
+            sprites[i][j] = {};
+            spriteTypes.forEach(function (type) {
+                sprite = new PIXI.Sprite(textures.bag); // initial texture will replaced on viewport update
+                sprite.position.x = i * base.constants.tile.width;
+                sprite.position.y = j * base.constants.tile.height;
+                stage.addChild(sprite);
+                sprites[i][j][type] = sprite;
+
+            });
+        }
+    }
+
+    // hide, show sprites or update their textures
     function updateViewport() {
         // only update if connection established and at least one viewport state received from server
         if (typeof viewport === 'undefined') {
@@ -395,83 +402,37 @@ window.addEventListener('load', function clientLoader() {
 
                 // ground
                 // all cells have this attribute of type "number"
-                sprite = sprites.ground[i][j];
-                if (typeof sprite !== 'object') {
-                    sprite = new PIXI.Sprite(textures.grounds[cell.ground]);
-                    sprite.position.x = i * CONSTANTS.tile.width;
-                    sprite.position.y = j * CONSTANTS.tile.height;
-                    stage.addChild(sprite);
-                    sprites.ground[i][j] = sprite;
-                } else {
-                    sprite.texture = textures.grounds[cell.ground];
-                }
+                sprites[i][j].ground.texture = textures.grounds[cell.ground];
 
                 // objects
                 // if present, attribute is of type "number"
-                // if empty, attribute is not defined
-                sprite = sprites.objects[i][j];
+                // if empty, attribute is undefined
                 if (typeof cell.object !== 'undefined') {
-                    if (typeof sprite !== 'object') {
-                        sprite = new PIXI.Sprite(textures.objects[cell.object]);
-                        sprite.position.x = i * CONSTANTS.tile.width;
-                        sprite.position.y = j * CONSTANTS.tile.height;
-                        stage.addChild(sprite);
-                        sprites.objects[i][j] = sprite;
-                    } else {
-                        sprite.texture = textures.objects[cell.object];
-                    }
+                    sprites[i][j].object.visible = true;
+                    sprites[i][j].object.texture = textures.objects[cell.object];
                 } else {
-                    if (typeof sprite === 'object') {
-                        stage.removeChild(sprites.objects[i][j]);
-                        delete sprites.objects[i][j];
-                    }
+                    sprites[i][j].object.visible = false;
                 }
 
                 // bags
                 // if present, attribute is of type "object"
-                // if empty, attribute is not defined
-                sprite = sprites.bags[i][j];
-                if (typeof cell.bag !== 'undefined') {
-                    if (typeof sprite !== 'object') {
-                        sprite = new PIXI.Sprite(textures.bag);
-                        sprite.position.x = i * CONSTANTS.tile.width;
-                        sprite.position.y = j * CONSTANTS.tile.height;
-                        stage.addChild(sprite);
-                        sprites.bags[i][j] = sprite;
-                    }
-                } else {
-                    if (typeof sprite === 'object') {
-                        stage.removeChild(sprites.bags[i][j]);
-                        delete sprites.bags[i][j];
-                    }
-                }
+                // if empty, attribute is undefined
+                sprites[i][j].bag.visible = (typeof cell.bag !== 'undefined');
+
 
                 // characters
                 // if present, attribute is of type "object"
-                // if empty, attribute is not defined
-                sprite = sprites.chars[i][j];
+                // if empty, attribute is undefined
                 if (typeof cell.char !== 'undefined') {
+                    sprites[i][j].char.visible = true;
+                    sprites[i][j].char.tint = cell.char.tint;
                     if (cell.char.type === CONSTANTS.charTypes.player) {
-                        texture = textures.hero;
+                        sprites[i][j].char.texture = textures.hero;
                     } else if (cell.char.type === CONSTANTS.charTypes.mob) {
-                        texture = textures.mobs[cell.char.bid];
+                        sprites[i][j].char.texture = textures.mobs[cell.char.bid];
                     }
-                    if (typeof sprite !== 'object') {
-                        sprite = new PIXI.Sprite(texture);
-                        sprite.position.x = i * CONSTANTS.tile.width;
-                        sprite.position.y = j * CONSTANTS.tile.height;
-                        sprite.tint = cell.char.tint;
-                        stage.addChild(sprite);
-                        sprites.chars[i][j] = sprite;
-                    } else {
-                        sprite.texture = texture;
-                    }
-
                 } else {
-                    if (typeof sprite === 'object') {
-                        stage.removeChild(sprites.chars[i][j]);
-                        delete sprites.chars[i][j];
-                    }
+                    sprites[i][j].char.visible = false;
                 }
             }
         }
@@ -497,7 +458,7 @@ window.addEventListener('load', function clientLoader() {
             newTime = Date.now();
             deltaTime = newTime - lastAnimTime;
             lastAnimTime = newTime;
-            fps = 0.9 * fps + 0.1 * 1000 / deltaTime; // moving average
+            fps = 0.95 * fps + 0.05 * 1000 / deltaTime; // moving average
         }
 
     }
