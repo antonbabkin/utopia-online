@@ -17,13 +17,25 @@ window.addEventListener('load', function clientLoader() {
 
     // object "base" is loaded in base.js
     var CONSTANTS = base.constants;
-    var OBJECTS = base.objects;
-    var GROUNDS = base.grounds;
+
 
 
     var self, inventory, equipment;
     var viewport;
     var i, j;
+
+
+    // -----------------------
+    // Append client-specific utils
+    // -----------------------
+    utils.worldToViewport = function (pos) {
+        // Convert world coordinates to viewport position, based on coordinates of player's character.
+        var vec = utils.vector(self, pos);
+        return {
+            x: base.constants.viewport.centerX + vec.x,
+            y: base.constants.viewport.centerY + vec.y
+        };
+    };
 
 
     // ----------------------
@@ -209,7 +221,7 @@ window.addEventListener('load', function clientLoader() {
         right: document.getElementById('groundRightArrow'),
         update: function () {
             var i, slot, item;
-            var bag = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag;
+            var bag = viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].bag;
             if (typeof bag !== 'undefined') {
                 div.groundPanel.style.display = '';
                 for (i = 0; i <= 2; i += 1) {
@@ -289,6 +301,67 @@ window.addEventListener('load', function clientLoader() {
 
 
     // -------------------------
+    // Hit marks
+    // -------------------------
+    var hitMarks = (function () {
+        // This creates an object with public methods necessary to work with hit marks.
+        // Marks are objects that are kept in a dynamic array - @stack.
+        // New marks are created and added to array as needed.
+        // Used marks are returned back to array.
+
+        var stack = []; // storage for inactive marks, ready to be displayed
+        var lifetime = 1500; // how long the mark is visible
+        var frames = 20; // number of animation frames
+        var frameDuration = lifetime / frames;
+
+        function createNew() {
+            // create new hitMark object
+            var txt = new PIXI.Text('', {font: 'bold 14px Arial', fill: 'white', align: 'center', stroke: 'black', strokeThickness: 3});
+            txt.anchor.x = 0.5;
+            txt.anchor.y = 0.5;
+            var animTimer;
+
+            function animate() {
+                // text floats up
+                txt.position.y -= 2;
+                txt.position.x += 1;
+                animTimer = setTimeout(animate, frameDuration);
+            }
+
+            return {
+                show: function (x, y, dmg) {
+                    txt.setText(dmg.toString());
+                    txt.position.x = base.constants.tile.width * (0.5 + x);
+                    txt.position.y = base.constants.tile.height * (0.5 + y);
+                    stage.addChild(txt);
+                    animTimer = setTimeout(animate, frameDuration);
+                },
+                hide: function () {
+                    stage.removeChild(txt);
+                    clearTimeout(animTimer);
+                }
+            };
+        }
+
+        // return hitMarks interface
+        return {
+            show: function (x, y, dmg) {
+                // get new mark from stack or create new if stack is empty
+                // show mark at the tile specified by x, y with damage dmg
+                // start animation
+                // hide and return mark to stack after certain period
+                var mark = stack.pop() || createNew();
+                mark.show(x, y, dmg);
+                setTimeout(function () {
+                    mark.hide();
+                    stack.push(mark);
+                }, lifetime);
+            }
+        };
+    }());
+
+
+    // -------------------------
     // Listen to server events
     // -------------------------
     var socket = io();
@@ -303,7 +376,7 @@ window.addEventListener('load', function clientLoader() {
 
     socket.on('viewport', function onViewport(view) {
         viewport = view;
-        self = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].char;
+        self = viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].char;
         updateViewport();
         ui.ground.update();
     });
@@ -323,8 +396,8 @@ window.addEventListener('load', function clientLoader() {
     });
 
     socket.on('hit', function onHit(char) {
-        // todo: visual effect for hit
-        ui.notifications.push(char.name + ' is hit!');
+        var pos = utils.worldToViewport(char);
+        hitMarks.show(pos.x, pos.y, 1);
         sounds.play(sounds.hit);
     });
 
@@ -346,7 +419,7 @@ window.addEventListener('load', function clientLoader() {
     // PIXI
     // -------------------------
     var stage = new PIXI.Stage(0xc8f040);
-    var renderer = PIXI.autoDetectRenderer(CONSTANTS.viewport.widthP, CONSTANTS.viewport.heightP);
+    var renderer = PIXI.autoDetectRenderer(base.constants.viewport.widthP, base.constants.viewport.heightP);
     div.canvas.appendChild(renderer.view);
 
 

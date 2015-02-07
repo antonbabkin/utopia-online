@@ -24,12 +24,15 @@ function baseClosure() {
         },
         viewport: { // visible part of the map, size in tiles
             width: 15,
-            height: 15
+            height: 15,
+            centerX: 7,
+            centerY: 7,
+            widthP: 15 * 32,
+            heightP: 15 * 32
         },
         actionDelay: 1000,
         mobLimit: 10,
         bagLifetime: 60 * 1000,
-        stateUpdateTime: 100,
         playerUpdateTime: 200,
         serverSaveTime: 60 * 60 * 1000,
         environmentUpdateTime: 10 * 60 * 1000,
@@ -54,11 +57,6 @@ function baseClosure() {
             structure: 1
         }
     };
-
-    constants.viewport.widthP = constants.viewport.width * constants.tile.width;
-    constants.viewport.heightP = constants.viewport.height * constants.tile.height;
-    constants.viewport.halfWidth = (constants.viewport.width - 1) / 2;
-    constants.viewport.halfHeight = (constants.viewport.height - 1) / 2;
 
     // UI sidepanel size in pixels
     constants.uiPanel = {
