@@ -83,7 +83,12 @@ function utilsClosure() {
             }
         });
 
-        vec.norm = Math.abs(vec.x) + Math.abs(vec.y);
+        vec.normSum = function () {
+            return Math.abs(vec.x) + Math.abs(vec.y);
+        };
+        vec.normMax = function () {
+            return Math.max(Math.abs(vec.x), Math.abs(vec.y));
+        };
         return vec;
     };
 

@@ -14,6 +14,30 @@
         <script src="game_client.js"></script>
 
         <style type="text/css">
+            div#loginBackground {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 720px;
+                height: 480px;
+                background-color: yellowgreen;
+                z-index: 10;
+            }
+            div#loginBox {
+                top: 30%;
+                text-align: center;
+            }
+            div#loginBox p#loginCaption {
+                font: 80px Cursive;
+            }
+            div#loginBox div#loginButton {
+                border: 2px coral solid;
+                width: 40%;
+                margin: auto;
+                cursor: pointer;
+                background-color: greenyellow;
+                color: gray;
+            }
             div.tab {
                 position: absolute;
                 top: 0;
@@ -36,6 +60,9 @@
                 height: 146px;
                 border: 2px coral solid;
                 background-color: greenyellow;
+            }
+            div#panelStats p {
+                margin: 0;
             }
             td.invSlot {
                 width: 32px;
@@ -63,7 +90,7 @@
             }
             ul#crafts span {
                 border: 1px coral solid;
-                margin: 1px 0px 0px 1px;
+                margin: 1px 0 0 1px;
                 float: right;
                 display: inline-block;
                 width: 18px;
@@ -76,10 +103,34 @@
             ul#crafts img {
                 vertical-align: middle;
             }
+            div#itemMenu {
+                position: absolute;
+                display: none;
+                border: 1px coral solid;
+                background-color: greenyellow;
+                width: 70px;
+                z-index: 2;
+            }
+            div#itemMenu p {
+                cursor: pointer;
+                margin: 0;
+            }
+            div#itemMenu p:hover {
+                background-color: yellow;
+            }
+
         </style>
     </head>
 
     <body style="margin: 0;">
+        <div id="loginBackground">
+            <div id="loginBox">
+                <p id="loginCaption">Utopia Online</p>
+                <p>Character name: <input type="text" id="loginName"></p>
+                <div id="loginButton">Login</div>
+                <p id="loginStatus"></p>
+            </div>
+        </div>
         <div id="canvasDiv" style="position: absolute; top: 0; left: 0; width: 480px; height: 480px;"></div>
         <div id="uiPanel" style="position: absolute; top: 0; left: 480px; width: 240px; height: 480px; background-color: skyblue;">
             <div id="tabInv" class="tab" style="left: 0; border-color: coral;">
@@ -132,9 +183,11 @@
                 <div id="eq2" class="eqSlot" style="left: 170px; top: 30px; background-image: url(public/eq_hand.png);"></div>
             </div>
             <div id="panelStats" class="tabPanel">
+                <div id="stat_name" style="text-align: center;">Your name</div>
                 <div style="float: left; width: 50%;">
                     <p style="text-align: center;">Attributes</p>
-                    <p>HP: <span id="stat_hp"></span></p>
+                    <p>HP: <span id="stat_hp"></span>/<span id="stat_maxHp"></span></p>
+                    <p>Damage: <span id="stat_damage"></span></p>
                     <p>Speed: <span id="stat_speed"></span></p>
                 </div>
                 <div style="float: right; width: 50%;">
@@ -162,6 +215,12 @@
             </div>
             <div id="notifications" style="overflow: auto; height: 150px; position:absolute; left: 0; bottom: 0;">
                 Welcome to Utopia Online!
+            </div>
+            <div id="itemMenu">
+                <div id="item_name"></div>
+                <p id="item_use">use</p>
+                <p id="item_info">info</p>
+                <p id="item_drop">drop</p>
             </div>
         </div>
         <div id="debug" style="float: right;"></div>

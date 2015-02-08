@@ -12,6 +12,7 @@ function gameServer(io) {
     let fs = require('fs');
     let base = require('./base.js');
     let utils = require('./utils.js');
+    let playersData = {}; // players' data stored by name, available while server is running
 
     // Augment utils with server-only functions
     utils.grid = {
@@ -27,7 +28,7 @@ function gameServer(io) {
             return {
                 x: x,
                 y: y
-            }
+            };
         },
         cellsAround: function (center) {
             // center = {x, y}
@@ -99,12 +100,18 @@ function gameServer(io) {
                     if (typeof equippedBid !== 'undefined') {
                         utils.inventory.addItem(player, equippedBid);
                     }
+                    player.updateStats();
                     player.emit('equipment', equipment);
                 } else if (item.type === base.constants.itemTypes.structure && typeof grid[player.x][player.y].object !== 'number') {
                     utils.inventory.removeItem(player, itemBid);
                     player.delayedAction(function () {
                         grid[player.x][player.y].object = base.objectId[item.name];
                     });
+                } else if (item.type === base.constants.itemTypes.consumable) {
+                    let stats = player.getStats();
+                    stats.hp = Math.min(stats.maxHp, stats.hp + item.heals);
+                    player.emit('stats', stats);
+                    utils.inventory.removeItem(player, itemBid);
                 }
             }
         },
@@ -127,6 +134,7 @@ function gameServer(io) {
             if (typeof equipment[eqSlot] !== 'undefined' && utils.inventory.addItem(player, equipment[eqSlot])) {
                 delete equipment[eqSlot];
                 player.emit('equipment', equipment);
+                player.updateStats();
             }
         }
     };
@@ -158,7 +166,7 @@ function gameServer(io) {
                 min: craft.minLevel
             };
             if (utils.craft.possible(player, craftBid) && utils.skill.canUse(player, req)) {
-                player.emit('msg', 'Trying to craft ' + craft.output.name + '...')
+                player.emit('msg', 'Trying to craft ' + craft.output.name + '...');
                 player.delayedAction(function () {
                     craft.inputs.forEach(function (input) {
                         utils.inventory.removeItem(player, input.bid, input.count);
@@ -202,9 +210,9 @@ function gameServer(io) {
         },
         increase: function (player, skill) {
             let stats = player.getStats();
-            if (stats[skill] < 100) {
-                stats[skill] += 1;
-                player.emit('stats', stats);
+            if (stats.base[skill] < 100) {
+                stats.base[skill] += 1;
+                player.updateStats();
                 player.emit('msg', 'You feel better at ' + skill);
             }
         }
@@ -229,14 +237,21 @@ function gameServer(io) {
 
             // damage is dealt
             if (success) {
-                dStats.hp -= 1;
-                // todo: broadcast hit event to other players in view
+                let hitData = {
+                    x: defender.x,
+                    y: defender.y,
+                    dmg: aStats.damage
+                };
+                Object.keys(players).forEach(function (pid) {
+                    // broadcast hit events to all players that see defender in their viewport
+                    if (utils.vector(defender, players[pid]).normMax() <= base.constants.viewport.centerX) {
+                        players[pid].emit('hit', hitData);
+                    }
+                });
+
+                dStats.hp -= aStats.damage;
                 if (defender.type === base.constants.charTypes.player) {
-                    defender.emit('hit', defender);
                     defender.emit('stats', dStats);
-                }
-                if (attacker.type === base.constants.charTypes.player) {
-                    attacker.emit('hit', defender);
                 }
 
                 if (dStats.hp <= 0) {
@@ -459,6 +474,7 @@ function gameServer(io) {
         let prv = {
             stats: {
                 hp: base.mobs[spawnId].stats.hp,
+                damage: base.mobs[spawnId].stats.damage,
                 speed: base.mobs[spawnId].stats.speed,
                 fighting: base.mobs[spawnId].stats.fighting
             },
@@ -506,7 +522,7 @@ function gameServer(io) {
         // move 1 tile towards specified destination
         // naive path-finding algorithm
         function moveTowards(destination) {
-            let shortestDistance = utils.vector(pub, destination).norm;
+            let shortestDistance = utils.vector(pub, destination).normSum();
             let stayOnTile = true; // if all possible moves lead away from destination, don't move
             let newPos;
 
@@ -514,7 +530,7 @@ function gameServer(io) {
             let moves = findEmptyTilesAround();
             Object.keys(moves).forEach(function (dir) {
                 let xy = moves[dir];
-                let distance = utils.vector(xy, destination).norm;
+                let distance = utils.vector(xy, destination).normSum();
                 if (distance < shortestDistance) {
                     shortestDistance = distance;
                     newPos = xy;
@@ -547,7 +563,7 @@ function gameServer(io) {
                     // move to the first player found within mob's radius
                     let noPlayerInRadius = Object.keys(players).every(function (pid) {
                         let player = players[pid];
-                        let distance = utils.vector(pub, player).norm;
+                        let distance = utils.vector(pub, player).normSum();
                         if (distance <= prv.radius) {
                             moveTowards(player);
                             return false; // exit .every loop
@@ -661,64 +677,73 @@ function gameServer(io) {
         }
     }
 
-    function createPlayer(socket) {
-        let pos = utils.grid.getRandomEmptyCell();
+    function createPlayer(socket, name) {
+        // Player constructor, which is run when new connection logs in
 
-        // public properties and methods
-        let player = {
-            x: pos.x,
-            y: pos.y,
-            tint: (0.5 + 0.5 * Math.random()) * 0xFFFFFF,
-            name: 'Player ' + Math.round(Math.random() * 100),
-            type: base.constants.charTypes.player,
-            id: socket.id
-        };
+        // -----------------------------------------------------------
+        // Private variables
+        // -----------------------------------------------------------
+        let player, // only this object becomes public
+            inventory,
+            equipment,
+            stats,
+            actionDelay,
+            onDelay,
+            delayTimer,
+            viewport,
+            emitViewportTimer;
 
-        player.emit = function (msg, data) {
+        // -----------------------------------------------------------
+        // Private functions
+        // -----------------------------------------------------------
+        function emit(msg, data) {
             socket.emit(msg, data);
-        };
+        }
 
-        // private properties and methods
-        let inventory = [];
-        let equipment = {};
-        let stats = {
-            hp: base.constants.maxHp,
-            speed: 5,
-            gathering: 100,
-            crafting: 100,
-            fighting: 100
-        };
-        let speed = 5;
-        let actionDelay = base.constants.actionDelay / speed;
+        function updateStats() {
+            base.constants.stats.forEach(function (stat) {
+                stats.bonus[stat] = 0;
+            });
+            Object.keys(equipment).forEach(function (slot) {
+                if (typeof equipment[slot] !== 'undefined') {
+                    let itemBonuses = base.items[equipment[slot]].bonus;
+                    if (typeof itemBonuses !== 'undefined') {
+                        Object.keys(itemBonuses).forEach(function (stat) {
+                            stats.bonus[stat] += itemBonuses[stat];
+                        });
+                    }
+                }
+            });
+            base.constants.stats.forEach(function (stat) {
+                stats[stat] = stats.base[stat] + stats.bonus[stat];
+            });
+            emit('stats', stats);
+        }
 
-        let onDelay = false;
-        let delayTimer;
-
-        // @inventory getter: used to manipulate @inventory from outside of player object
-        // @inventory still remains a private property and is not emitted to client
         function getInventory() {
+            // @inventory getter: used to manipulate @inventory from outside of player object
+            // @inventory still remains a private property and is not emitted to client
             return inventory;
         }
-        player.getInventory = getInventory;
-        // @equipment getter
+
         function getEquipment() {
+            // @equipment getter
             return equipment;
         }
-        player.getEquipment = getEquipment;
-        // @stats getter
+
         function getStats() {
+            // @stats getter
             return stats;
         }
-        player.getStats = getStats;
 
-        // part of the grid visible to player, that is emitted on update
-        let viewport = [];
         function updateViewport() {
+            // part of the grid visible to player, that is emitted on update
+            viewport = [];
             let x1, y1, xy;
-            let xl = player.x - base.constants.viewport.halfWidth;
-            let xh = player.x + base.constants.viewport.halfWidth;
-            let yl = player.y - base.constants.viewport.halfHeight;
-            let yh = player.y + base.constants.viewport.halfHeight;
+            let xl = player.x - base.constants.viewport.centerX;
+            let xh = player.x + base.constants.viewport.centerX;
+            let yl = player.y - base.constants.viewport.centerY;
+            let yh = player.y + base.constants.viewport.centerY;
             for (x1 = xl; x1 <= xh; x1 += 1) {
                 viewport[x1 - xl] = [];
                 for (y1 = yl; y1 <= yh; y1 += 1) {
@@ -728,26 +753,17 @@ function gameServer(io) {
                 }
             }
         }
-        updateViewport();
 
-        // run update loop
-        let updateTimer;
-        (function updateLoop() {
-            socket.emit('viewport', viewport);
-            updateTimer = setTimeout(updateLoop, base.constants.playerUpdateTime);
-        }());
-
-        // perform action with delay: gathering, building, crafting
         function delayedAction(callback) {
+            // perform action with delay: gathering, building, crafting
             if (!onDelay) {
                 onDelay = true;
-                setTimeout(function () {
+                delayTimer = setTimeout(function () {
                     onDelay = false;
                     callback();
                 }, actionDelay);
             }
         }
-        player.delayedAction = delayedAction;
 
         function die() {
             // Lose all inventory items and equipment from a randomly chosen slot.
@@ -765,95 +781,183 @@ function gameServer(io) {
                 items: loot
             });
 
-            stats.hp = base.constants.maxHp;
+            updateStats();
+            stats.hp = stats.maxHp;
             moveOnGrid(player, utils.grid.getRandomEmptyCell());
             updateViewport();
-            socket.emit('inventory', inventory);
-            socket.emit('equipment', equipment);
-            socket.emit('stats', stats);
-            socket.emit('msg', 'Oh dear, you are dead!')
+            emit('inventory', inventory);
+            emit('equipment', equipment);
+            emit('stats', stats);
+            emit('msg', 'Oh dear, you are dead!')
         }
+
+        function destroy() {
+            // interrupt timer loops and delete player object from global lists
+            clearTimeout(delayTimer);
+            clearTimeout(emitViewportTimer);
+            removeFromGrid(player);
+        }
+
+        function emitViewportLoop() {
+            emit('viewport', viewport);
+            emitViewportTimer = setTimeout(emitViewportLoop, base.constants.playerUpdateTime);
+        }
+
+        // -----------------------------------------------------------
+        // Initialize variables
+        // -----------------------------------------------------------
+        if (typeof playersData[name] === 'undefined') {
+            // create new player
+            let pos = utils.grid.getRandomEmptyCell();
+            player = {
+                x: pos.x,
+                y: pos.y,
+                tint: (0.5 + 0.5 * Math.random()) * 0xFFFFFF
+            };
+            inventory = [];
+            equipment = {};
+            stats = {
+                hp: 20,
+                base: {
+                    maxHp: 20,
+                    damage: 1,
+                    speed: 4,
+                    gathering: 0,
+                    crafting: 0,
+                    fighting: 0
+                },
+                bonus: {
+                    maxHp: 0,
+                    damage: 0,
+                    speed: 0,
+                    gathering: 0,
+                    crafting: 0,
+                    fighting: 0
+                }
+                // total stats are added to this object by updateStats()
+            };
+        } else {
+            // load player from storage
+            let p = playersData[name];
+            player = {
+                x: p.x,
+                y: p.y,
+                tint: p.tint
+            };
+            inventory = p.inventory;
+            equipment = p.equipment;
+            stats = p.stats;
+        }
+
+        player.name = name;
+        player.type = base.constants.charTypes.player;
+        player.id = socket.id;
+        player.emit = emit;
+        player.updateStats = updateStats;
+        player.getInventory = getInventory;
+        player.getEquipment = getEquipment;
+        player.getStats = getStats;
+        player.delayedAction = delayedAction;
         player.die = die;
+        player.destroy = destroy;
 
+        addToGrid(player); // add new player object to global lists
 
-        // Inputs listener
-        socket.on('input', function onInput(key) {
+        updateStats();
+        actionDelay = base.constants.actionDelay / stats.speed;
+        onDelay = false;
+        emit('login', {success: true});
+        emit('inventory', inventory);
+        emit('equipment', equipment);
+        emit('stats', stats);
+        updateViewport();
+        emitViewportLoop(); // start update loop
+
+        console.log('Player connected: ' + player.name);
+        console.log('Current number of players: ' + Object.keys(players).length);
+        io.emit('msg', player.name + ' joined the game. Players online: ' + Object.keys(players).length);
+
+        // -----------------------------------------------------------
+        // Socket listeners
+        // -----------------------------------------------------------
+        socket.on('walk', function onWalk(dir) {
+            if (dir !== 'e' && dir !== 'w' && dir !== 'n' && dir !== 's') {
+                return;
+            }
             // walking and attacking are instant, but other actions require delay
             if (!onDelay) {
-                if (key === 'e' || key === 'w' || key === 'n' || key === 's') { // move
-                    let newPos = {
-                        x: player.x,
-                        y: player.y
-                    };
+                let newPos = {
+                    x: player.x,
+                    y: player.y
+                };
 
-                    switch (key) {
-                        case 'e':
-                            newPos.x += 1;
-                            break;
-                        case 'w':
-                            newPos.x -= 1;
-                            break;
-                        case 'n':
-                            newPos.y -= 1;
-                            break;
-                        case 's':
-                            newPos.y += 1;
-                            break;
-                    }
+                switch (dir) {
+                    case 'e':
+                        newPos.x += 1;
+                        break;
+                    case 'w':
+                        newPos.x -= 1;
+                        break;
+                    case 'n':
+                        newPos.y -= 1;
+                        break;
+                    case 's':
+                        newPos.y += 1;
+                        break;
+                }
 
-                    utils.wrapOverWorld(newPos);
+                utils.wrapOverWorld(newPos);
 
-                    let objectBid = grid[newPos.x][newPos.y].object;
-                    let other = grid[newPos.x][newPos.y].char;
+                let objectBid = grid[newPos.x][newPos.y].object;
+                let other = grid[newPos.x][newPos.y].char;
 
-                    if (typeof other !== 'undefined') {
-                        // attack if there is another char at destination
-                        utils.combat.hit(player, other);
-                        onDelay = true;
-                        delayTimer = setTimeout(function () {
-                            onDelay = false;
-                        }, actionDelay);
-                    } else if (typeof objectBid === 'number') {
-                        let object = base.objects[objectBid];
-                        // interact if there is object at destination
-                        if (object.type === base.constants.objectTypes.structure) {
-                            if (!utils.inventory.full(player)) {
-                                delayedAction(function () {
-                                    utils.inventory.addItem(player, base.itemId[object.name]);
-                                    delete grid[newPos.x][newPos.y].object;
-                                });
-                            }
-                        } else if (object.type === base.constants.objectTypes.node) {
-                            let req = {
-                                skill: object.skill,
-                                min: object.minLevel
-                            };
-                            if (!utils.inventory.full(player) && utils.skill.canUse(player, req)) {
-                                player.emit('msg', 'You try ' + object.skill + '...');
-                                delayedAction(function () {
-                                    // give item if skill succeeds
-                                    if (utils.skill.use(player, req)) {
-                                        utils.inventory.addItem(player, object.output);
-                                        player.emit('msg', 'Success!');
-                                    } else{
-                                        player.emit('msg', 'Fail!');
-                                    }
-                                    // todo: probability to destroy object depends on player's skill
-                                    if (Math.random() < 0.2) {
-                                        delete grid[newPos.x][newPos.y].object;
-                                    }
-                                });
-                            }
+                if (typeof other !== 'undefined') {
+                    // attack if there is another char at destination
+                    utils.combat.hit(player, other);
+                    onDelay = true;
+                    delayTimer = setTimeout(function () {
+                        onDelay = false;
+                    }, actionDelay);
+                } else if (typeof objectBid === 'number') {
+                    let object = base.objects[objectBid];
+                    // interact if there is object at destination
+                    if (object.type === base.constants.objectTypes.structure) {
+                        if (!utils.inventory.full(player)) {
+                            delayedAction(function () {
+                                utils.inventory.addItem(player, base.itemId[object.name]);
+                                delete grid[newPos.x][newPos.y].object;
+                            });
                         }
-                    } else {
-                        // walk if destination cell is empty
-                        moveOnGrid(player, newPos);
-                        updateViewport();
-                        onDelay = true;
-                        delayTimer = setTimeout(function () {
-                            onDelay = false;
-                        }, actionDelay);
+                    } else if (object.type === base.constants.objectTypes.node) {
+                        let req = {
+                            skill: object.skill,
+                            min: object.minLevel
+                        };
+                        if (!utils.inventory.full(player) && utils.skill.canUse(player, req)) {
+                            emit('msg', 'You try ' + object.skill + '...');
+                            delayedAction(function () {
+                                // give item if skill succeeds
+                                if (utils.skill.use(player, req)) {
+                                    utils.inventory.addItem(player, object.output);
+                                    emit('msg', 'Success!');
+                                } else{
+                                    emit('msg', 'Fail!');
+                                }
+                                // todo: probability to destroy object depends on player's skill
+                                if (Math.random() < 0.2) {
+                                    delete grid[newPos.x][newPos.y].object;
+                                }
+                            });
+                        }
                     }
+                } else {
+                    // walk if destination cell is empty
+                    moveOnGrid(player, newPos);
+                    updateViewport();
+                    onDelay = true;
+                    delayTimer = setTimeout(function () {
+                        onDelay = false;
+                    }, actionDelay);
                 }
             }
         });
@@ -889,17 +993,29 @@ function gameServer(io) {
             utils.craft.perform(player, craftBid);
         });
 
-        // interrupt action loop and delete mob object from global lists
-        function destroy() {
-            clearTimeout(delayTimer);
-            clearTimeout(updateTimer);
-            removeFromGrid(player);
-        }
-        player.destroy = destroy;
+        // Remove player from game on disconnect
+        socket.on('disconnect', function onDisconnect() {
+            // save player data to storage
+            playersData[name] = {
+                x: player.x,
+                y: player.y,
+                tint: player.tint,
+                inventory: inventory,
+                equipment: equipment,
+                stats: stats
+            };
 
-        // add new player object to global lists and return player object
-        addToGrid(player);
-        return player;
+            destroy();
+            let playersCount = Object.keys(players).length;
+            io.emit('msg', player.name + ' left the game. Players online: ' + playersCount);
+            console.log('Player disconnected: ' + player.name);
+            console.log('Current number of players: ' + playersCount);
+        });
+
+        // Respond to ping request
+        socket.on('ping', function onPing() {
+            socket.emit('pong');
+        });
     }
 
 
@@ -908,29 +1024,16 @@ function gameServer(io) {
 
     // listen for connection of new clients
     io.on('connection', function onConnection(socket) {
-        let player = createPlayer(socket);
-        player.emit('connected', {id: player.id});
-        player.emit('inventory', player.getInventory());
-        player.emit('equipment', player.getEquipment());
-        player.emit('stats', player.getStats());
-
-        let playersCount = Object.keys(players).length;
-        console.log('Player connected: ' + socket.id);
-        console.log('Current number of players: ' + playersCount);
-        io.emit('msg', player.name + ' joined the game. Players online: ' + playersCount);
-
-        // Remove player from game on disconnect
-        socket.on('disconnect', function onDisconnect() {
-            player.destroy();
-            playersCount = Object.keys(players).length;
-            io.emit('msg',  player.name + ' left the game. Players online: ' + playersCount);
-            console.log('Player disconnected: ' + socket.id);
-            console.log('Current number of players: ' + playersCount);
-        });
-
-        // Respond to ping request
-        socket.on('ping', function onPing() {
-            socket.emit('pong');
+        socket.emit('connected');
+        socket.on('login', function (name) {
+            // check if player with such name is already playing
+            if (Object.keys(players).every(function (pid) {
+                return players[pid].name !== name;
+            })) {
+                createPlayer(socket, name);
+            } else {
+                socket.emit('login', {success: false, msg: 'Player with name "' + name + '" is already in game.'});
+            }
         });
     });
 }

@@ -35,17 +35,18 @@ function baseClosure() {
         bagLifetime: 60 * 1000,
         playerUpdateTime: 200,
         serverSaveTime: 60 * 60 * 1000,
-        environmentUpdateTime: 10 * 60 * 1000,
+        environmentUpdateTime: 60 * 1000,
         charTypes: {
             player: 0,
             mob: 1
         },
         maxInventory: 20,
-        maxHp: 20,
         itemTypes: {
             equipment: 0,
             structure: 1,
-            consumable: 2
+            consumable: 2,
+            material: 3,
+            junk: 4
         },
         eqSlots: {
             torso: 0,
@@ -55,7 +56,15 @@ function baseClosure() {
         objectTypes: {
             node: 0,
             structure: 1
-        }
+        },
+        stats: [
+            'maxHp',
+            'damage',
+            'speed',
+            'crafting',
+            'gathering',
+            'fighting'
+        ]
     };
 
     // UI sidepanel size in pixels
@@ -72,47 +81,65 @@ function baseClosure() {
     var items = [];
     items[0] = {
         name: 'Log',
-        image: 'log'
+        image: 'log',
+        type: constants.itemTypes.material
     };
     items[1] = {
         name: 'Leather',
-        image: 'leather'
+        image: 'leather',
+        type: constants.itemTypes.material
     };
     items[2] = {
         name: 'Leather shirt',
         image: 'leather_shirt',
         eqSlot: constants.eqSlots.torso,
-        type: constants.itemTypes.equipment
+        type: constants.itemTypes.equipment,
+        bonus: {
+            fighting: 20
+        }
     };
     items[3] = {
         name: 'Leather pants',
         image: 'leather_pants',
         eqSlot: constants.eqSlots.legs,
-        type: constants.itemTypes.equipment
+        type: constants.itemTypes.equipment,
+        bonus: {
+            fighting: 10
+        }
     };
     items[4] = {
         name: 'Wooden sword',
         image: 'wooden_sword',
         eqSlot: constants.eqSlots.hand,
-        type: constants.itemTypes.equipment
+        type: constants.itemTypes.equipment,
+        bonus: {
+            fighting: 10,
+            damage: 1
+        }
     };
     items[5] = {
         name: 'Bone',
         image: 'bone',
         eqSlot: constants.eqSlots.hand,
-        type: constants.itemTypes.equipment
+        type: constants.itemTypes.equipment,
+        bonus: {
+            fighting: 10
+        }
     };
     items[6] = {
         name: 'Raw meat',
-        image: 'raw_meat'
+        image: 'raw_meat',
+        type: constants.itemTypes.material
     };
     items[7] = {
         name: 'Claws',
-        image: 'claws'
+        image: 'claws',
+        type: constants.itemTypes.junk
     };
     items[8] = {
         name: 'Stone',
-        image: 'stone'
+        image: 'stone',
+        type: constants.itemTypes.material
     };
     items[9] = {
         name: 'Wooden wall',
@@ -125,8 +152,9 @@ function baseClosure() {
         type: constants.itemTypes.structure
     };
     items[11] = {
-        name: "Player's ear",
-        image: 'players_ear'
+        name: 'Player\'s ear',
+        image: 'players_ear',
+        type: constants.itemTypes.junk
     };
     items[12] = {
         name: 'Campfire',
@@ -141,7 +169,8 @@ function baseClosure() {
     items[14] = {
         name: 'Cooked meat',
         image: 'cooked_meat',
-        type: constants.itemTypes.consumable
+        type: constants.itemTypes.consumable,
+        heals: 1
     };
 
 
@@ -162,6 +191,7 @@ function baseClosure() {
         aggressive: false,
         stats: {
             hp: 5,
+            damage: 1,
             speed: 1,
             fighting: 0
         },
@@ -187,8 +217,9 @@ function baseClosure() {
         radius: 5,
         stats: {
             hp: 5,
+            damage: 2,
             speed: 1,
-            fighting: 20
+            fighting: 30
         },
         drops: [
             {

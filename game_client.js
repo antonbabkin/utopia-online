@@ -12,10 +12,31 @@
 window.addEventListener('load', function clientLoader() {
     'use strict';
 
+    var gameKeyboard = false; // switch between game controls and text-field modes
+
+    var socket = io();
+
+    socket.on('connected', function onConnected() {
+        console.log('Connection established');
+        document.getElementById('loginButton').style.color = 'black';
+        document.getElementById('loginButton').addEventListener('click', function () {
+            socket.emit('login', document.getElementById('loginName').value);
+        }, false);
+    });
+
+    socket.on('login', function onLogin(data) {
+        if (data.success) {
+            console.log('Login successful');
+            document.getElementById('loginBackground').style.display = 'none';
+            gameKeyboard = true;
+        } else {
+            document.getElementById('loginStatus').innerHTML = data.msg;
+        }
+    });
+
     var base = baseClosure();
     var utils = utilsClosure();
 
-    // object "base" is loaded in base.js
     var CONSTANTS = base.constants;
 
 
@@ -24,6 +45,17 @@ window.addEventListener('load', function clientLoader() {
     var viewport;
     var i, j;
 
+    // -----------------------
+    // Append client-specific base objects
+    // -----------------------
+    base.constants.itemTypeNames = {};
+    Object.keys(base.constants.itemTypes).forEach(function (name) {
+        base.constants.itemTypeNames[base.constants.itemTypes[name]] = name;
+    });
+    base.constants.eqSlotNames = {};
+    Object.keys(base.constants.eqSlots).forEach(function (name) {
+        base.constants.eqSlotNames[base.constants.eqSlots[name]] = name;
+    });
 
     // -----------------------
     // Append client-specific utils
@@ -35,6 +67,28 @@ window.addEventListener('load', function clientLoader() {
             x: base.constants.viewport.centerX + vec.x,
             y: base.constants.viewport.centerY + vec.y
         };
+    };
+
+    utils.itemInfo = function (bid) {
+        // Generate a string describing item
+        var item = base.items[bid];
+        var info = base.constants.itemTypeNames[item.type];
+        var bonus = '', bonuses;
+        if (item.type === base.constants.itemTypes.equipment) {
+            info += ': ' + base.constants.eqSlotNames[item.eqSlot] + '. ';
+            bonuses = Object.keys(item.bonus);
+            bonuses.forEach(function (stat, index) {
+                bonus += stat + ': ' + item.bonus[stat];
+                if (index < bonuses.length - 1) {
+                    bonus += ', ';
+                }
+            });
+            info += 'Bonuses: ' + (bonus.length > 0 ? bonus : 'none');
+        } else if (item.type === base.constants.itemTypes.consumable && typeof item.heals !== 'undefined') {
+            info += 'Heals: ' + item.heals;
+        }
+        info += '.';
+        return info;
     };
 
 
@@ -94,7 +148,7 @@ window.addEventListener('load', function clientLoader() {
     ui.activeTab = div.tabs.inv;
 
     // -----------------------------------------------
-    // Inventory tab
+    // Inventory tab and context menu
     // -----------------------------------------------
     ui.inventory = {
         update: function () {
@@ -110,15 +164,43 @@ window.addEventListener('load', function clientLoader() {
             }
         }
     };
+
+    // click events for menu options
+    document.getElementById('item_use').addEventListener('click', function () {
+        socket.emit('invUse', ui.inventory.menuSlot);
+        //document.getElementById('itemMenu').style.display = 'none';
+    }, false);
+    document.getElementById('item_info').addEventListener('click', function () {
+        var item = base.items[inventory[ui.inventory.menuSlot]];
+        ui.notifications.push(item.name + ': ' + utils.itemInfo(item.bid));
+        //document.getElementById('itemMenu').style.display = 'none';
+    }, false);
+    document.getElementById('item_drop').addEventListener('click', function () {
+        socket.emit('drop', ui.inventory.menuSlot);
+        //document.getElementById('itemMenu').style.display = 'none';
+    }, false);
+
+    // left click anywhere hides item menu
+    document.addEventListener('click', function () {
+        document.getElementById('itemMenu').style.display = 'none';
+    });
+
     // click events for inventory slots
     for (i = 0; i <= 19; i += 1) {
         document.getElementById('inv' + i).addEventListener('contextmenu', (function (slot) {
-            // right click
+            // right click: remember clicked slot and show menu
             // this closure "remembers" particular value of @i in local variable @slot
             return function (event) {
                 event.preventDefault();
                 if (typeof inventory[slot] !== 'undefined') {
-                    socket.emit('drop', slot);
+                    ui.inventory.menuSlot = slot;
+                    var item = base.items[inventory[slot]];
+                    document.getElementById('item_name').innerHTML = item.name;
+                    var menu = document.getElementById('itemMenu');
+
+                    menu.style.top = (70 + document.getElementById('inv' + slot).offsetTop) + 'px';
+                    menu.style.left = (10 + document.getElementById('inv' + slot).offsetLeft) + 'px';
+                    menu.style.display = 'block';
                 }
             }
         }(i)), false);
@@ -181,7 +263,8 @@ window.addEventListener('load', function clientLoader() {
         //spanA.innerHTML = 'A';
         span1.innerHTML = '1';
         pInfo.style.display = 'none';
-        pInfo.innerHTML = 'Skill: ' + craft.skill + ', level: ' + craft.minLevel + '<br>';
+        pInfo.innerHTML = utils.itemInfo(craft.output.bid) + '<br>';
+        pInfo.innerHTML += 'Skill: ' + craft.skill + ', level: ' + craft.minLevel + '<br>';
         if (typeof craft.facility !== 'undefined') {
             pInfo.innerHTML += 'Facility: <img src="public/' + base.objects[craft.facility].image + '.png"><br>';
         }
@@ -252,7 +335,7 @@ window.addEventListener('load', function clientLoader() {
         document.getElementById('ground' + i).addEventListener('click', (function (slot) {
             // this closure "remembers" particular value of @i in local variable @slot
             return function () {
-                var bag = viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag;
+                var bag = viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].bag;
                 if (typeof bag !== 'undefined' && typeof bag.items[ui.ground.slot0 + slot] !== 'undefined') {
                     socket.emit('pick', ui.ground.slot0 + slot);
                 }
@@ -267,7 +350,7 @@ window.addEventListener('load', function clientLoader() {
         }
     });
     ui.ground.right.addEventListener('click', function () {
-        if (ui.ground.slot0 + 3 < viewport[base.constants.viewport.halfWidth][base.constants.viewport.halfHeight].bag.items.length) {
+        if (ui.ground.slot0 + 3 < viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].bag.items.length) {
             ui.ground.slot0 += 3;
             ui.ground.update();
         }
@@ -364,11 +447,7 @@ window.addEventListener('load', function clientLoader() {
     // -------------------------
     // Listen to server events
     // -------------------------
-    var socket = io();
 
-    socket.on('connected', function onConnected(data) {
-        console.log('Connection established, client id: ' + data.id);
-    });
 
     socket.on('msg', function onMsg(msg) {
         ui.notifications.push(msg);
@@ -390,14 +469,21 @@ window.addEventListener('load', function clientLoader() {
         ui.equipment.update();
     });
     socket.on('stats', function onStats(st) {
-        Object.keys(st).forEach(function (statName) {
+        document.getElementById('stat_hp').innerHTML = st.hp;
+        base.constants.stats.forEach(function (statName) {
             document.getElementById('stat_' + statName).innerHTML = st[statName];
+            if (st.bonus[statName] > 0) {
+                document.getElementById('stat_' + statName).innerHTML += '(+' + st.bonus[statName] + ')';
+            }
         });
+
+        //todo: this should be done once on login
+        document.getElementById('stat_name').innerHTML = self.name;
     });
 
-    socket.on('hit', function onHit(char) {
-        var pos = utils.worldToViewport(char);
-        hitMarks.show(pos.x, pos.y, 1);
+    socket.on('hit', function onHit(data) {
+        var pos = utils.worldToViewport(data);
+        hitMarks.show(pos.x, pos.y, data.dmg);
         sounds.play(sounds.hit);
     });
 
@@ -437,14 +523,16 @@ window.addEventListener('load', function clientLoader() {
     });
 
 
-    // 2-dim grid for PIXI sprites
-    var spriteTypes = [
-        'ground',
-        'object',
-        'bag',
-        'char'
-    ];
-    var sprites = [], sprite;
+
+
+    var sprites = [], // 2-dim grid for PIXI sprites
+        sprite,
+        spriteTypes = [
+            'ground',
+            'object',
+            'bag',
+            'char'
+        ];
     // fill grid with PIXI sprites for each type
     for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
         sprites[i] = [];
@@ -562,27 +650,30 @@ window.addEventListener('load', function clientLoader() {
     };
 
     window.addEventListener('keydown', function (e) {
-        var key;
+        if (!gameKeyboard) {
+            return;
+        }
+        var dir;
         switch (e.keyCode) {
         case KEYBOARD.w:
             e.preventDefault();
-            key = 'n';
+            dir = 'n';
             break;
         case KEYBOARD.s:
             e.preventDefault();
-            key = 's';
+            dir = 's';
             break;
         case KEYBOARD.a:
             e.preventDefault();
-            key = 'w';
+            dir = 'w';
             break;
         case KEYBOARD.d:
             e.preventDefault();
-            key = 'e';
+            dir = 'e';
             break;
         }
-        socket.emit('input', key);
-    });
+        socket.emit('walk', dir);
+    }, false);
 
 
 }, false);
