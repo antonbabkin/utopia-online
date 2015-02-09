@@ -103,6 +103,7 @@ window.addEventListener('load', function clientLoader() {
         panel: document.getElementById('uiPanel'),
         debug: document.getElementById('debug'),
         notifications: document.getElementById('notifications'),
+        chat: document.getElementById('chat'),
         groundPanel: document.getElementById('groundPanel'),
         ground: document.getElementById('ground'),
         tabs: {
@@ -357,7 +358,7 @@ window.addEventListener('load', function clientLoader() {
     });
 
     // --------------------------
-    // Notification field
+    // Notifications and chat
     // --------------------------
     ui.notifications = {
         push: function (msg) {
@@ -365,6 +366,24 @@ window.addEventListener('load', function clientLoader() {
             div.notifications.scrollTop = div.notifications.scrollHeight;
         }
     };
+
+    div.chat.addEventListener('focus', function () {
+        gameKeyboard = false;
+    }, false);
+    div.chat.addEventListener('blur', function () {
+        gameKeyboard = true;
+    }, false);
+    div.chat.addEventListener('keyup', function (event) {
+        event.stopPropagation();
+        if (event.keyCode === KEYBOARD.enter) {
+            if (div.chat.value !== '') {
+                socket.emit('chat', div.chat.value);
+                div.chat.value = '';
+            }
+            div.chat.blur();
+        }
+    }, false);
+
 
     ui.settings = {
         mute: true
@@ -643,36 +662,41 @@ window.addEventListener('load', function clientLoader() {
         right: 39,
         down: 40,
         space: 32,
+        enter: 13,
         a: 65,
         w: 87,
         d: 68,
         s: 83
     };
 
-    window.addEventListener('keydown', function (e) {
+    window.addEventListener('keyup', function (event) {
+        event.preventDefault();
         if (!gameKeyboard) {
             return;
         }
         var dir;
-        switch (e.keyCode) {
-        case KEYBOARD.w:
-            e.preventDefault();
-            dir = 'n';
-            break;
-        case KEYBOARD.s:
-            e.preventDefault();
-            dir = 's';
-            break;
-        case KEYBOARD.a:
-            e.preventDefault();
-            dir = 'w';
-            break;
-        case KEYBOARD.d:
-            e.preventDefault();
-            dir = 'e';
-            break;
+
+        if (event.keyCode === KEYBOARD.enter) {
+            div.chat.focus();
+        } else {
+            switch (event.keyCode) {
+                case KEYBOARD.w:
+                    dir = 'n';
+                    break;
+                case KEYBOARD.s:
+                    dir = 's';
+                    break;
+                case KEYBOARD.a:
+                    dir = 'w';
+                    break;
+                case KEYBOARD.d:
+                    dir = 'e';
+                    break;
+            }
+            if (typeof dir !== 'undefined') {
+                socket.emit('walk', dir);
+            }
         }
-        socket.emit('walk', dir);
     }, false);
 
 

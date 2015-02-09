@@ -388,14 +388,20 @@ function gameServer(io) {
         // new trees grow and wood is broken
         grid.forEach(function (column) {
             column.forEach(function (cell) {
-                if (cell.object === null && Math.random() < 0.02) {
-                    if (cell.ground === base.groundId['Grass']) {
-                        cell.object = base.objectId['Tree'];
-                    } else if (cell.ground === base.groundId['Sand']) {
-                        cell.object = base.objectId['Palm'];
+                if (typeof cell.object === 'undefined') {
+                    // no object: can grow
+                    if (typeof cell.ground.grow !== 'undefined' && Math.random() < cell.ground.grow.p) {
+                        cell.object = cell.ground.grow.bid;
                     }
-                } else if (cell.object === base.objectId['Wood'] && Math.random() < 0.02) {
-                    delete cell.object;
+                } else {
+                    // some object: can change
+                    if (typeof cell.object.change !== 'undefined' && Math.random() < cell.object.change.p) {
+                        if (typeof cell.object.change.bid !== 'undefined') {
+                            cell.object = cell.object.change.bid;
+                        } else {
+                            delete cell.object;
+                        }
+                    }
                 }
             });
         });
@@ -754,6 +760,14 @@ function gameServer(io) {
             }
         }
 
+        function delay() {
+            // put player on delay
+            onDelay = true;
+            delayTimer = setTimeout(function () {
+                onDelay = false;
+            }, actionDelay);
+        }
+
         function delayedAction(callback) {
             // perform action with delay: gathering, building, crafting
             if (!onDelay) {
@@ -914,19 +928,25 @@ function gameServer(io) {
                 if (typeof other !== 'undefined') {
                     // attack if there is another char at destination
                     utils.combat.hit(player, other);
-                    onDelay = true;
-                    delayTimer = setTimeout(function () {
-                        onDelay = false;
-                    }, actionDelay);
+                    delay()
                 } else if (typeof objectBid === 'number') {
                     let object = base.objects[objectBid];
                     // interact if there is object at destination
-                    if (object.type === base.constants.objectTypes.structure) {
+                    if (object.type === base.constants.objectTypes.facility) {
+                        // facilities are picked up
                         if (!utils.inventory.full(player)) {
                             delayedAction(function () {
                                 utils.inventory.addItem(player, base.itemId[object.name]);
                                 delete grid[newPos.x][newPos.y].object;
                             });
+                        }
+                    } else if (object.type === base.constants.objectTypes.structure) {
+                        // structures are attacked and destroyed on success
+                        // todo: make it depend on player stats, equips...
+                        emit('msg', 'You hit ' + object.name);
+                        delay();
+                        if (Math.random() > object.durability) {
+                            delete grid[newPos.x][newPos.y].object;
                         }
                     } else if (object.type === base.constants.objectTypes.node) {
                         let req = {
@@ -943,8 +963,7 @@ function gameServer(io) {
                                 } else{
                                     emit('msg', 'Fail!');
                                 }
-                                // todo: probability to destroy object depends on player's skill
-                                if (Math.random() < 0.2) {
+                                if (Math.random() > object.durability) {
                                     delete grid[newPos.x][newPos.y].object;
                                 }
                             });
@@ -954,10 +973,7 @@ function gameServer(io) {
                     // walk if destination cell is empty
                     moveOnGrid(player, newPos);
                     updateViewport();
-                    onDelay = true;
-                    delayTimer = setTimeout(function () {
-                        onDelay = false;
-                    }, actionDelay);
+                    delay();
                 }
             }
         });
@@ -991,6 +1007,11 @@ function gameServer(io) {
         // clicked recipe
         socket.on('craft', function onCraft(craftBid) {
             utils.craft.perform(player, craftBid);
+        });
+
+        // sent chat message
+        socket.on('chat', function onChat(msg) {
+            io.emit('msg', player.name + ': ' + msg);
         });
 
         // Remove player from game on disconnect

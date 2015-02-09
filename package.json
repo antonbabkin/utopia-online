@@ -21,6 +21,7 @@
     "node": "0.10.x"
   },
   "dependencies": {
+    "csv": "^0.4.1",
     "express": "4.9.x",
     "socket.io": "1.1.x"
   }

@@ -55,7 +55,8 @@ function baseClosure() {
         },
         objectTypes: {
             node: 0,
-            structure: 1
+            structure: 1,
+            facility: 2
         },
         stats: [
             'maxHp',
@@ -66,13 +67,6 @@ function baseClosure() {
             'fighting'
         ]
     };
-
-    // UI sidepanel size in pixels
-    constants.uiPanel = {
-        width: Math.floor(constants.viewport.widthP / 2),
-        height: constants.viewport.heightP
-    };
-
 
 
     // ------------------------------------------------------------------------------
@@ -251,16 +245,107 @@ function baseClosure() {
     });
 
     // ------------------------------------------------------------------------------
+    // Object types
+    // ------------------------------------------------------------------------------
+    var objects = [
+        {
+            name: 'Tree',
+            image: 'tree',
+            type: constants.objectTypes.node,
+            durability: 0.8,
+            output: itemId['Log'],
+            skill: 'gathering',
+            minLevel: 0
+        },
+        {
+            name: 'Palm',
+            image: 'palm',
+            type: constants.objectTypes.node,
+            durability: 0.9,
+            output: itemId['Log'],
+            skill: 'gathering',
+            minLevel: 20
+        },
+        {
+            name: 'Rock',
+            image: 'rock',
+            type: constants.objectTypes.node,
+            durability: 0.95,
+            output: itemId['Stone'],
+            skill: 'gathering',
+            minLevel: 30
+        },
+        {
+            name: 'Wooden wall',
+            image: 'wooden_wall',
+            type: constants.objectTypes.structure,
+            durability: 0.8,
+            change: {
+                p: 0.05
+            }
+        },
+        {
+            name: 'Wooden wall (hardened)',
+            image: 'wooden_wall',
+            type: constants.objectTypes.structure,
+            durability: 0.8,
+            change: {
+                p: 0.05
+            }
+        },
+        {
+            name: 'Stone wall',
+            image: 'stone_wall',
+            type: constants.objectTypes.structure,
+            durability: 0.9,
+            change: {
+                p: 0.02
+            }
+        },
+        {
+            name: 'Campfire',
+            image: 'campfire',
+            type: constants.objectTypes.facility,
+            change: {
+                p: 0.05
+            }
+        },
+        {
+            name: 'Workbench',
+            image: 'workbench',
+            type: constants.objectTypes.facility,
+            change: {
+                p: 0.02
+            }
+        }
+    ];
+    // add bids and lookup table
+    var objectId = {};
+    objects.forEach(function (object, index) {
+        object.bid = index;
+        objectId[object.name] = index;
+    });
+
+
+    // ------------------------------------------------------------------------------
     // Ground types
     // ------------------------------------------------------------------------------
     var grounds = [];
     grounds[0] = {
         name: 'Sand',
-        image: 'sand'
+        image: 'sand',
+        grow: {
+            p: 0.02,
+            bid: objectId['Palm']
+        }
     };
     grounds[1] = {
         name: 'Grass',
-        image: 'grass'
+        image: 'grass',
+        grow: {
+            p: 0.05,
+            bid: objectId['Tree']
+        }
     };
     // add bids and lookup table
     var groundId = {};
@@ -269,60 +354,6 @@ function baseClosure() {
         groundId[ground.name] = index;
     });
 
-    // ------------------------------------------------------------------------------
-    // Object types
-    // ------------------------------------------------------------------------------
-    var objects = [];
-    objects[0] = {
-        name: 'Tree',
-        image: 'tree',
-        type: constants.objectTypes.node,
-        output: itemId['Log'],
-        skill: 'gathering',
-        minLevel: 0
-    };
-    objects[1] = {
-        name: 'Palm',
-        image: 'palm',
-        type: constants.objectTypes.node,
-        output: itemId['Log'],
-        skill: 'gathering',
-        minLevel: 20
-    };
-    objects[2] = {
-        name: 'Rock',
-        image: 'rock',
-        type: constants.objectTypes.node,
-        output: itemId['Stone'],
-        skill: 'gathering',
-        minLevel: 30
-    };
-    objects[3] = {
-        name: 'Wooden wall',
-        image: 'wooden_wall',
-        type: constants.objectTypes.structure
-    };
-    objects[4] = {
-        name: 'Stone wall',
-        image: 'stone_wall',
-        type: constants.objectTypes.structure
-    };
-    objects[5] = {
-        name: 'Campfire',
-        image: 'campfire',
-        type: constants.objectTypes.structure
-    };
-    objects[6] = {
-        name: 'Workbench',
-        image: 'workbench',
-        type: constants.objectTypes.structure
-    };
-    // add bids and lookup table
-    var objectId = {};
-    objects.forEach(function (object, index) {
-        object.bid = index;
-        objectId[object.name] = index;
-    });
 
     // ------------------------------------------------------------------------------
     // Crafting recipes

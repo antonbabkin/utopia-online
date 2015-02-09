@@ -1,0 +1,3 @@
+name,image,aggressive,radius,stats.hp,stats.damage,stats.speed,stats.fighting,drops.0.name,drops.0.p,drops.1.name,drops.1.p,drops.2.name,drops.2.p,drops.3.name,drops.3.p
+Sphere,sphere,false,,5,,1,0,Leather,1,Raw meat,1,Bone,1,,
+Angry sphere,angry_sphere,true,5,5,2,1,30,Leather,1,Raw meat,1,Bone,1,Claws,0.5
