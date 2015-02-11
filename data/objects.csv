@@ -1,4 +1,4 @@
-name,image,type,durability,output.name,skill,level,change.name,change.p
+name,image,type,durability,output,skill,level,change.name,change.p
 Tree,tree,resource,0.8,Log,gathering,0,,
 Palm,palm,resource,0.9,Log,gathering,20,,
 Rock,rock,resource,0.95,Stone,gathering,30,,

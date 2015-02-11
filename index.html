@@ -9,7 +9,7 @@
         <script src="/pixi.dev.js"></script>
 
         <!-- Game code -->
-        <script src="base.js"></script>
+        <script src="db.js"></script>
         <script src="utils.js"></script>
         <script src="game_client.js"></script>
 
@@ -178,9 +178,9 @@
                 </table>
             </div>
             <div id="panelEquips" class="tabPanel" style="background-image: url(public/equipment_bg.png); background-repeat: no-repeat; background-position: center;">
-                <div id="eq0" class="eqSlot" style="left: 40px; top: 30px; background-image: url(public/eq_torso.png);"></div>
-                <div id="eq1" class="eqSlot" style="left: 40px; top: 80px; background-image: url(public/eq_legs.png);"></div>
-                <div id="eq2" class="eqSlot" style="left: 170px; top: 30px; background-image: url(public/eq_hand.png);"></div>
+                <div id="eq_torso" class="eqSlot" style="left: 40px; top: 30px; background-image: url(public/eq_torso.png);"></div>
+                <div id="eq_legs" class="eqSlot" style="left: 40px; top: 80px; background-image: url(public/eq_legs.png);"></div>
+                <div id="eq_hand" class="eqSlot" style="left: 170px; top: 30px; background-image: url(public/eq_hand.png);"></div>
             </div>
             <div id="panelStats" class="tabPanel">
                 <div id="stat_name" style="text-align: center;">Your name</div>

@@ -23,8 +23,8 @@ app.get('/', function (req, res) {
     res.sendFile(__dirname + '/index.html');
 });
 
-app.get('/base.js', function (req, res) {
-    res.sendFile(__dirname + '/base.js');
+app.get('/db.js', function (req, res) {
+    res.sendFile(__dirname + '/db.js');
 });
 
 app.get('/utils.js', function (req, res) {

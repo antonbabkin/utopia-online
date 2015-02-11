@@ -28,6 +28,7 @@ window.addEventListener('load', function clientLoader() {
         if (data.success) {
             console.log('Login successful');
             document.getElementById('loginBackground').style.display = 'none';
+            document.getElementById('stat_name').innerHTML = data.name;
             gameKeyboard = true;
         } else {
             document.getElementById('loginStatus').innerHTML = data.msg;
@@ -37,9 +38,6 @@ window.addEventListener('load', function clientLoader() {
     var base = baseClosure();
     var utils = utilsClosure();
 
-    var CONSTANTS = base.constants;
-
-
 
     var self, inventory, equipment;
     var viewport;
@@ -48,14 +46,10 @@ window.addEventListener('load', function clientLoader() {
     // -----------------------
     // Append client-specific base objects
     // -----------------------
-    base.constants.itemTypeNames = {};
-    Object.keys(base.constants.itemTypes).forEach(function (name) {
-        base.constants.itemTypeNames[base.constants.itemTypes[name]] = name;
-    });
-    base.constants.eqSlotNames = {};
-    Object.keys(base.constants.eqSlots).forEach(function (name) {
-        base.constants.eqSlotNames[base.constants.eqSlots[name]] = name;
-    });
+    base.constants.tile = { // Tile size in pixels
+        width: 32,
+        height: 32
+    };
 
     // -----------------------
     // Append client-specific utils
@@ -72,19 +66,18 @@ window.addEventListener('load', function clientLoader() {
     utils.itemInfo = function (bid) {
         // Generate a string describing item
         var item = base.items[bid];
-        var info = base.constants.itemTypeNames[item.type];
-        var bonus = '', bonuses;
-        if (item.type === base.constants.itemTypes.equipment) {
-            info += ': ' + base.constants.eqSlotNames[item.eqSlot] + '. ';
-            bonuses = Object.keys(item.bonus);
-            bonuses.forEach(function (stat, index) {
-                bonus += stat + ': ' + item.bonus[stat];
-                if (index < bonuses.length - 1) {
-                    bonus += ', ';
+        var info = item.type;
+        var bonusText = '';
+        if (item.type === 'equipment') {
+            info += ': ' + item.eqSlot + '. ';
+            item.bonuses.forEach(function (bonus, index) {
+                bonusText += bonus.stat + ': ' + bonus.value;
+                if (index < item.bonuses.length - 1) {
+                    bonusText += ', ';
                 }
             });
-            info += 'Bonuses: ' + (bonus.length > 0 ? bonus : 'none');
-        } else if (item.type === base.constants.itemTypes.consumable && typeof item.heals !== 'undefined') {
+            info += 'Bonuses: ' + (bonusText.length > 0 ? bonusText : 'none');
+        } else if (typeof item.heals !== 'undefined') {
             info += 'Heals: ' + item.heals;
         }
         info += '.';
@@ -223,24 +216,22 @@ window.addEventListener('load', function clientLoader() {
     ui.equipment = {
         update: function () {
             var slot, bid, url;
-            Object.keys(base.constants.eqSlots).forEach(function (slotName) {
-                slot = base.constants.eqSlots[slotName];
+            base.constants.eqSlots.forEach(function (slot) {
                 bid = equipment[slot];
                 url = 'url(public/';
                 if (typeof bid !== 'undefined') {
                     url += base.items[bid].image;
                 } else {
-                    url += '/eq_' + slotName;
+                    url += '/eq_' + slot;
                 }
                 url += '.png)';
-                document.getElementById('eq' + slot).style.backgroundImage = url;
+                document.getElementById('eq_' + slot).style.backgroundImage = url;
             });
         }
     };
     // click events for equipment slots
-    Object.keys(base.constants.eqSlots).forEach(function (slotName) {
-        var slot = base.constants.eqSlots[slotName];
-        document.getElementById('eq' + slot).addEventListener('click', function () {
+    base.constants.eqSlots.forEach(function (slot) {
+        document.getElementById('eq_' + slot).addEventListener('click', function () {
             if (typeof equipment[slot] !== 'undefined') {
                 socket.emit('unequip', slot);
             }
@@ -259,13 +250,13 @@ window.addEventListener('load', function clientLoader() {
         //var spanA = document.createElement('span');
         var span1 = document.createElement('span');
         liCraft.style.listStyleType = 'disc';
-        pName.innerHTML = craft.output.name;
+        pName.innerHTML = base.items[craft.output].name;
         pName.style.cursor = 'pointer';
         //spanA.innerHTML = 'A';
         span1.innerHTML = '1';
         pInfo.style.display = 'none';
-        pInfo.innerHTML = utils.itemInfo(craft.output.bid) + '<br>';
-        pInfo.innerHTML += 'Skill: ' + craft.skill + ', level: ' + craft.minLevel + '<br>';
+        pInfo.innerHTML = utils.itemInfo(craft.output) + '<br>';
+        pInfo.innerHTML += 'Skill: ' + craft.skill + ', level: ' + craft.level + '<br>';
         if (typeof craft.facility !== 'undefined') {
             pInfo.innerHTML += 'Facility: <img src="public/' + base.objects[craft.facility].image + '.png"><br>';
         }
@@ -274,7 +265,7 @@ window.addEventListener('load', function clientLoader() {
             pInfo.innerHTML += 'x' + input.count;
             pInfo.innerHTML += (index < craft.inputs.length - 1 ? ' + ' : ' = ');
         });
-        pInfo.innerHTML += '<img src="public/' + base.items[craft.output.bid].image + '.png">';
+        pInfo.innerHTML += '<img src="public/' + base.items[craft.output].image + '.png">';
 
         span1.addEventListener('click', function (event) {
             socket.emit('craft', craft.bid);
@@ -495,9 +486,6 @@ window.addEventListener('load', function clientLoader() {
                 document.getElementById('stat_' + statName).innerHTML += '(+' + st.bonus[statName] + ')';
             }
         });
-
-        //todo: this should be done once on login
-        document.getElementById('stat_name').innerHTML = self.name;
     });
 
     socket.on('hit', function onHit(data) {
@@ -553,9 +541,9 @@ window.addEventListener('load', function clientLoader() {
             'char'
         ];
     // fill grid with PIXI sprites for each type
-    for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
+    for (i = 0; i < base.constants.viewport.width; i += 1) {
         sprites[i] = [];
-        for (j = 0; j < CONSTANTS.viewport.height; j += 1) {
+        for (j = 0; j < base.constants.viewport.height; j += 1) {
             sprites[i][j] = {};
             spriteTypes.forEach(function (type) {
                 sprite = new PIXI.Sprite(textures.bag); // initial texture will replaced on viewport update
@@ -576,8 +564,8 @@ window.addEventListener('load', function clientLoader() {
         }
 
         var i, j, cell, sprite, texture;
-        for (i = 0; i < CONSTANTS.viewport.width; i += 1) {
-            for (j = 0; j < CONSTANTS.viewport.height; j += 1) {
+        for (i = 0; i < base.constants.viewport.width; i += 1) {
+            for (j = 0; j < base.constants.viewport.height; j += 1) {
                 cell = viewport[i][j];
 
                 // ground
@@ -606,9 +594,9 @@ window.addEventListener('load', function clientLoader() {
                 if (typeof cell.char !== 'undefined') {
                     sprites[i][j].char.visible = true;
                     sprites[i][j].char.tint = cell.char.tint;
-                    if (cell.char.type === CONSTANTS.charTypes.player) {
+                    if (cell.char.type === 'player') {
                         sprites[i][j].char.texture = textures.hero;
-                    } else if (cell.char.type === CONSTANTS.charTypes.mob) {
+                    } else if (cell.char.type === 'mob') {
                         sprites[i][j].char.texture = textures.mobs[cell.char.bid];
                     }
                 } else {

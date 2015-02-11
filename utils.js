@@ -10,7 +10,7 @@
 function utilsClosure() {
     var base;
     if (typeof module !== 'undefined') { // run on server
-        base = require('./base.js')
+        base = require('./db.js')
     } else { // run in client
         base = baseClosure();
     }

@@ -7,26 +7,26 @@
 /*jslint node: true, nomen: true */
 'use strict';
 
-let base = require('./base.js');
+let base = require('./db.js');
 
 let map = [];
 
 for (let x = 0; x < base.constants.world.width; x += 1) {
     map[x] = [];
     for (let y = 0; y < base.constants.world.height; y += 1) {
-        map[x][y] = {};
+        map[x][y] = [];
         if (Math.random() < 0.3) {
-            map[x][y].ground = base.groundId['Sand'];
+            map[x][y].push(base.groundId['Sand']);
             if (Math.random() < 0.1) {
-                map[x][y].object = base.objectId['Palm'];
+                map[x][y].push(base.objectId['Palm']);
             }
         } else {
-            map[x][y].ground = base.groundId['Grass'];
+            map[x][y].push(base.groundId['Grass']);
             let r = Math.random();
             if (r < 0.1) {
-                map[x][y].object = base.objectId['Rock'];
+                map[x][y].push(base.objectId['Rock']);
             } else if (r < 0.3) {
-                map[x][y].object = base.objectId['Tree'];
+                map[x][y].push(base.objectId['Tree']);
             }
         }
     }

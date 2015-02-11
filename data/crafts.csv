@@ -1,4 +1,4 @@
-output.name,inputs.0.name,inputs.0.count,inputs.1.name,inputs.1.count,skill,level,facility
+output,inputs.0.name,inputs.0.count,inputs.1.name,inputs.1.count,skill,level,facility
 Leather shirt,Leather,2,,,crafting,30,
 Leather pants,Leather,1,,,crafting,0,
 Wooden sword,Log,1,Leather,1,crafting,10,

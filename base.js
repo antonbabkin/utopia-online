@@ -19,8 +19,8 @@ function baseClosure() {
             height: 32
         },
         world: { // World size in tiles
-            width: 30,
-            height: 30
+            width: 100,
+            height: 100
         },
         viewport: { // visible part of the map, size in tiles
             width: 15,
@@ -31,7 +31,7 @@ function baseClosure() {
             heightP: 15 * 32
         },
         actionDelay: 1000,
-        mobLimit: 10,
+        mobLimit: 100,
         bagLifetime: 60 * 1000,
         playerUpdateTime: 200,
         serverSaveTime: 60 * 60 * 1000,

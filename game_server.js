@@ -10,7 +10,7 @@
 function gameServer(io) {
 
     let fs = require('fs');
-    let base = require('./base.js');
+    let base = require('./db.js');
     let utils = require('./utils.js');
     let playersData = {}; // players' data stored by name, available while server is running
 
@@ -92,7 +92,7 @@ function gameServer(io) {
             let itemBid = inventory[invSlot];
             if (typeof itemBid !== 'undefined') {
                 let item = base.items[itemBid];
-                if (item.type === base.constants.itemTypes.equipment) {
+                if (item.type === 'equipment') {
                     let equipment = player.getEquipment();
                     let equippedBid = equipment[item.eqSlot]; // previously equipped in that slot
                     equipment[item.eqSlot] = item.bid;
@@ -102,12 +102,12 @@ function gameServer(io) {
                     }
                     player.updateStats();
                     player.emit('equipment', equipment);
-                } else if (item.type === base.constants.itemTypes.structure && typeof grid[player.x][player.y].object !== 'number') {
+                } else if ((item.type === 'structure' || item.type === 'facility') && typeof grid[player.x][player.y].object === 'undefined') {
                     utils.inventory.removeItem(player, itemBid);
                     player.delayedAction(function () {
                         grid[player.x][player.y].object = base.objectId[item.name];
                     });
-                } else if (item.type === base.constants.itemTypes.consumable) {
+                } else if (typeof item.heals !== 'undefined') {
                     let stats = player.getStats();
                     stats.hp = Math.min(stats.maxHp, stats.hp + item.heals);
                     player.emit('stats', stats);
@@ -148,11 +148,14 @@ function gameServer(io) {
                 return (input.count <= utils.inventory.countItem(player, input.bid));
             });
 
+            !enoughInputs && player.emit('msg', 'Not enough materials');
+
             if (typeof craft.facility !== 'undefined') {
                 let around = utils.grid.cellsAround(player);
                 let noFacilityNear = Object.keys(around).every(function (dir) {
                     return around[dir].object !== craft.facility;
                 });
+                !noFacilityNear && player.emit('msg', 'No facility near');
                 return (enoughInputs && !noFacilityNear);
             } else {
                 return enoughInputs;
@@ -163,16 +166,16 @@ function gameServer(io) {
             let craft = base.crafts[craftBid];
             let req = {
                 skill: craft.skill,
-                min: craft.minLevel
+                min: craft.level
             };
             if (utils.craft.possible(player, craftBid) && utils.skill.canUse(player, req)) {
-                player.emit('msg', 'Trying to craft ' + craft.output.name + '...');
+                player.emit('msg', 'Trying to craft ' + base.items[craft.output].name + '...');
                 player.delayedAction(function () {
                     craft.inputs.forEach(function (input) {
                         utils.inventory.removeItem(player, input.bid, input.count);
                     });
                     if (utils.skill.use(player, req)) {
-                        utils.inventory.addItem(player, craft.output.bid);
+                        utils.inventory.addItem(player, craft.output);
                         player.emit('msg', 'Success!');
                     } else {
                         player.emit('msg', 'Fail!');
@@ -201,7 +204,7 @@ function gameServer(io) {
             // 0.5 * (100 - Player skill level)%, if fail
             let stats = player.getStats();
             let success = (Math.random() < 0.01 * (stats[req.skill] - req.min));
-            let increaseP = 1 - 0.01 * stats[req.skill];
+            let increaseP = 1 - 0.01 * stats.base[req.skill];
             increaseP *= (success ? 1 : 0.5);
             if (Math.random() < increaseP) {
                 utils.skill.increase(player, req.skill);
@@ -227,7 +230,7 @@ function gameServer(io) {
             let success = (aStats.fighting + 100 * Math.random() > dStats.fighting + 100 * Math.random());
 
             // attacker's fighting skill might increase
-            if (attacker.type === base.constants.charTypes.player) {
+            if (attacker.type === 'player') {
                 let increaseP = 1 - 0.01 * aStats.fighting;
                 increaseP *= (success ? 1 : 0.5);
                 if (Math.random() < increaseP) {
@@ -250,13 +253,13 @@ function gameServer(io) {
                 });
 
                 dStats.hp -= aStats.damage;
-                if (defender.type === base.constants.charTypes.player) {
+                if (defender.type === 'player') {
                     defender.emit('stats', dStats);
                 }
 
                 if (dStats.hp <= 0) {
                     defender.die();
-                    if (defender.type === base.constants.charTypes.player) {
+                    if (defender.type === 'player') {
                         io.emit('msg', defender.name + ' was killed by ' + attacker.name);
                     }
                 }
@@ -302,18 +305,18 @@ function gameServer(io) {
     // update grid and corresponding list
     function addToGrid(char) {
         grid[char.x][char.y].char = char;
-        if (char.type === base.constants.charTypes.player) {
+        if (char.type === 'player') {
             players[char.id] = char;
-        } else if (char.type === base.constants.charTypes.mob) {
+        } else if (char.type === 'mob') {
             mobs[char.id] = char;
         }
     }
 
     function removeFromGrid(char) {
         delete grid[char.x][char.y].char;
-        if (char.type === base.constants.charTypes.player) {
+        if (char.type === 'player') {
             delete players[char.id];
-        } else if (char.type === base.constants.charTypes.mob) {
+        } else if (char.type === 'mob') {
             delete mobs[char.id];
         }
     }
@@ -334,15 +337,16 @@ function gameServer(io) {
             if (err) {
                 console.error('Failed to read map.json');
                 console.log(err);
+                return;
             }
 
             console.log('map.json read successfully');
             let map = JSON.parse(data);
             for (let x = 0; x < base.constants.world.width; x += 1) {
                 for (let y = 0; y < base.constants.world.height; y += 1) {
-                    grid[x][y].ground = map[x][y].ground;
-                    if (typeof map[x][y].object === 'number') {
-                        grid[x][y].object = map[x][y].object;
+                    grid[x][y].ground = map[x][y][0];
+                    if (map[x][y].length === 2) {
+                        grid[x][y].object = map[x][y][1];
                     }
                 }
             }
@@ -364,10 +368,10 @@ function gameServer(io) {
         grid.forEach(function (column, x) {
             map[x] = [];
             column.forEach(function (cell, y) {
-                map[x][y] = {};
-                map[x][y].ground = cell.ground;
-                if (typeof cell.object === 'number') {
-                    map[x][y].object = cell.object;
+                map[x][y] = [];
+                map[x][y].push(cell.ground);
+                if (typeof cell.object !== 'undefined') {
+                    map[x][y].push(cell.object);
                 }
             });
         });
@@ -376,6 +380,7 @@ function gameServer(io) {
             if (err) {
                 console.error('Failed to write generated map to map.json');
                 console.log(err);
+                return;
             }
             console.log('---- map.json saved successfully');
         });
@@ -390,14 +395,16 @@ function gameServer(io) {
             column.forEach(function (cell) {
                 if (typeof cell.object === 'undefined') {
                     // no object: can grow
-                    if (typeof cell.ground.grow !== 'undefined' && Math.random() < cell.ground.grow.p) {
-                        cell.object = cell.ground.grow.bid;
+                    let ground = base.grounds[cell.ground];
+                    if (typeof ground.grow !== 'undefined' && Math.random() < ground.grow.p) {
+                        cell.object = ground.grow.bid;
                     }
                 } else {
                     // some object: can change
-                    if (typeof cell.object.change !== 'undefined' && Math.random() < cell.object.change.p) {
-                        if (typeof cell.object.change.bid !== 'undefined') {
-                            cell.object = cell.object.change.bid;
+                    let object = base.objects[cell.object];
+                    if (typeof object.change !== 'undefined' && Math.random() < object.change.p) {
+                        if (typeof object.change.bid !== 'undefined') {
+                            cell.object = object.change.bid;
                         } else {
                             delete cell.object;
                         }
@@ -409,7 +416,7 @@ function gameServer(io) {
         // new monsters respawn
         spawnMobs();
 
-        // update after regularly at given frequency
+        // update regularly at given frequency
         setTimeout(updateEnvironment, base.constants.environmentUpdateTime);
     }
 
@@ -469,7 +476,7 @@ function gameServer(io) {
             id: nextMobId,
             bid: spawnId,
             name: base.mobs[spawnId].name,
-            type: base.constants.charTypes.mob,
+            type: 'mob',
             x: pos.x,
             y: pos.y,
             tint: (0.5 + 0.5 * Math.random()) * 0xFFFFFF
@@ -557,7 +564,7 @@ function gameServer(io) {
                 let noAttack = Object.keys(around).every(function (dir) {
                     let xy = around[dir];
                     let other = grid[xy.x][xy.y].char;
-                    if (typeof other !== 'undefined' && other.type === base.constants.charTypes.player) {
+                    if (typeof other !== 'undefined' && other.type === 'player') {
                         utils.combat.hit(pub, other);
                         return false; // break .every loop
                     } else {
@@ -591,7 +598,7 @@ function gameServer(io) {
             let loot = [];
             // generate items from random drop table
             base.mobs[pub.bid].drops.forEach(function (item) {
-                if (Math.random() < item.prob) {
+                if (Math.random() < item.p) {
                     loot.push(item.bid);
                 }
             });
@@ -711,13 +718,11 @@ function gameServer(io) {
                 stats.bonus[stat] = 0;
             });
             Object.keys(equipment).forEach(function (slot) {
-                if (typeof equipment[slot] !== 'undefined') {
-                    let itemBonuses = base.items[equipment[slot]].bonus;
-                    if (typeof itemBonuses !== 'undefined') {
-                        Object.keys(itemBonuses).forEach(function (stat) {
-                            stats.bonus[stat] += itemBonuses[stat];
-                        });
-                    }
+                let itemBonuses = base.items[equipment[slot]].bonuses;
+                if (typeof itemBonuses !== 'undefined') {
+                    itemBonuses.forEach(function (bonus) {
+                        stats.bonus[bonus.stat] += bonus.value;
+                    });
                 }
             });
             base.constants.stats.forEach(function (stat) {
@@ -784,7 +789,7 @@ function gameServer(io) {
             // Player is then taken to a random spot in the map.
             let loot = inventory.concat(base.itemId["Player's ear"]);
             inventory = [];
-            let loseSlot = Math.floor(Math.random() * Object.keys(base.constants.eqSlots).length);
+            let loseSlot = base.constants.eqSlots[Math.floor(Math.random() * base.constants.eqSlots.length)];
             if (typeof equipment[loseSlot] !== 'undefined') {
                 loot.push(equipment[loseSlot]);
                 delete equipment[loseSlot];
@@ -864,7 +869,7 @@ function gameServer(io) {
         }
 
         player.name = name;
-        player.type = base.constants.charTypes.player;
+        player.type = 'player';
         player.id = socket.id;
         player.emit = emit;
         player.updateStats = updateStats;
@@ -880,7 +885,7 @@ function gameServer(io) {
         updateStats();
         actionDelay = base.constants.actionDelay / stats.speed;
         onDelay = false;
-        emit('login', {success: true});
+        emit('login', {success: true, name: player.name});
         emit('inventory', inventory);
         emit('equipment', equipment);
         emit('stats', stats);
@@ -895,87 +900,87 @@ function gameServer(io) {
         // Socket listeners
         // -----------------------------------------------------------
         socket.on('walk', function onWalk(dir) {
-            if (dir !== 'e' && dir !== 'w' && dir !== 'n' && dir !== 's') {
+            if (onDelay || (dir !== 'e' && dir !== 'w' && dir !== 'n' && dir !== 's')) {
                 return;
             }
+
             // walking and attacking are instant, but other actions require delay
-            if (!onDelay) {
-                let newPos = {
-                    x: player.x,
-                    y: player.y
-                };
+            let newPos = {
+                x: player.x,
+                y: player.y
+            };
 
-                switch (dir) {
-                    case 'e':
-                        newPos.x += 1;
-                        break;
-                    case 'w':
-                        newPos.x -= 1;
-                        break;
-                    case 'n':
-                        newPos.y -= 1;
-                        break;
-                    case 's':
-                        newPos.y += 1;
-                        break;
-                }
-
-                utils.wrapOverWorld(newPos);
-
-                let objectBid = grid[newPos.x][newPos.y].object;
-                let other = grid[newPos.x][newPos.y].char;
-
-                if (typeof other !== 'undefined') {
-                    // attack if there is another char at destination
-                    utils.combat.hit(player, other);
-                    delay()
-                } else if (typeof objectBid === 'number') {
-                    let object = base.objects[objectBid];
-                    // interact if there is object at destination
-                    if (object.type === base.constants.objectTypes.facility) {
-                        // facilities are picked up
-                        if (!utils.inventory.full(player)) {
-                            delayedAction(function () {
-                                utils.inventory.addItem(player, base.itemId[object.name]);
-                                delete grid[newPos.x][newPos.y].object;
-                            });
-                        }
-                    } else if (object.type === base.constants.objectTypes.structure) {
-                        // structures are attacked and destroyed on success
-                        // todo: make it depend on player stats, equips...
-                        emit('msg', 'You hit ' + object.name);
-                        delay();
-                        if (Math.random() > object.durability) {
-                            delete grid[newPos.x][newPos.y].object;
-                        }
-                    } else if (object.type === base.constants.objectTypes.node) {
-                        let req = {
-                            skill: object.skill,
-                            min: object.minLevel
-                        };
-                        if (!utils.inventory.full(player) && utils.skill.canUse(player, req)) {
-                            emit('msg', 'You try ' + object.skill + '...');
-                            delayedAction(function () {
-                                // give item if skill succeeds
-                                if (utils.skill.use(player, req)) {
-                                    utils.inventory.addItem(player, object.output);
-                                    emit('msg', 'Success!');
-                                } else{
-                                    emit('msg', 'Fail!');
-                                }
-                                if (Math.random() > object.durability) {
-                                    delete grid[newPos.x][newPos.y].object;
-                                }
-                            });
-                        }
-                    }
-                } else {
-                    // walk if destination cell is empty
-                    moveOnGrid(player, newPos);
-                    updateViewport();
-                    delay();
-                }
+            switch (dir) {
+                case 'e':
+                    newPos.x += 1;
+                    break;
+                case 'w':
+                    newPos.x -= 1;
+                    break;
+                case 'n':
+                    newPos.y -= 1;
+                    break;
+                case 's':
+                    newPos.y += 1;
+                    break;
             }
+
+            utils.wrapOverWorld(newPos);
+
+            let objectBid = grid[newPos.x][newPos.y].object;
+            let other = grid[newPos.x][newPos.y].char;
+
+            if (typeof other !== 'undefined') {
+                // attack if there is another char at destination
+                utils.combat.hit(player, other);
+                delay()
+            } else if (typeof objectBid === 'number') {
+                let object = base.objects[objectBid];
+                // interact if there is object at destination
+                if (object.type === 'facility') {
+                    // facilities are picked up
+                    if (!utils.inventory.full(player)) {
+                        delayedAction(function () {
+                            utils.inventory.addItem(player, base.itemId[object.name]);
+                            delete grid[newPos.x][newPos.y].object;
+                        });
+                    }
+                } else if (object.type === 'structure') {
+                    // structures are attacked and destroyed on success
+                    // todo: make it depend on player stats, equips...
+                    emit('msg', 'You hit ' + object.name);
+                    delay();
+                    if (Math.random() > object.durability) {
+                        delete grid[newPos.x][newPos.y].object;
+                    }
+                } else if (object.type === 'resource') {
+                    let req = {
+                        skill: object.skill,
+                        min: object.level
+                    };
+                    if (!utils.inventory.full(player) && utils.skill.canUse(player, req)) {
+                        emit('msg', 'You try ' + object.skill + '...');
+                        delayedAction(function () {
+                            // give item if skill succeeds
+                            if (utils.skill.use(player, req)) {
+                                utils.inventory.addItem(player, object.output);
+                                emit('msg', 'Success!');
+                            } else{
+                                emit('msg', 'Fail!');
+                            }
+                            if (Math.random() > object.durability) {
+                                delete grid[newPos.x][newPos.y].object;
+                            }
+                        });
+                    }
+                }
+            } else {
+                // walk if destination cell is empty
+                moveOnGrid(player, newPos);
+                updateViewport();
+                delay();
+            }
+
         });
 
         // left-clicked @invSlot
