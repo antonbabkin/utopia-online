@@ -74,8 +74,8 @@ function afterParse() {
 
 db.constants = {
     world: { // World size in tiles
-        width: 100,
-        height: 100
+        width: 40,
+        height: 40
     },
     viewport: { // visible part of the map, size in tiles
         width: 15,
@@ -86,11 +86,11 @@ db.constants = {
         heightP: 15 * 32
     },
     actionDelay: 1000,
-    mobLimit: 100,
+    mobLimit: 16,
     bagLifetime: 60 * 1000,
     playerUpdateTime: 125,
     serverSaveTime: 60 * 60 * 1000,
-    environmentUpdateTime: 60 * 1000,
+    environmentUpdateTime: 5 * 60 * 1000,
     maxInventory: 20,
     eqSlots: [
         'torso',

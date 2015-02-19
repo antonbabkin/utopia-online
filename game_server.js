@@ -13,6 +13,7 @@ function gameServer(io) {
     let base = require('./db.js');
     let utils = require('./utils.js');
     let playersData = {}; // players' data stored by name, available while server is running
+    let privateObjects = {}; // map objects that are tied to particular players
 
     // Augment utils with server-only functions
     utils.grid = {
@@ -105,7 +106,11 @@ function gameServer(io) {
                 } else if ((item.type === 'structure' || item.type === 'facility') && typeof grid[player.x][player.y].object === 'undefined') {
                     utils.inventory.removeItem(player, itemBid);
                     player.delayedAction(function () {
-                        grid[player.x][player.y].object = base.objectId[item.name];
+                        let objectId = base.objectId[item.name];
+                        grid[player.x][player.y].object = objectId;
+                        if (base.objects[objectId].type === 'private') {
+                            privateObjects[player.x + '.' + player.y] = player.name;
+                        }
                     });
                 } else if (typeof item.heals !== 'undefined') {
                     let stats = player.getStats();
@@ -344,12 +349,14 @@ function gameServer(io) {
             let map = JSON.parse(data);
             for (let x = 0; x < base.constants.world.width; x += 1) {
                 for (let y = 0; y < base.constants.world.height; y += 1) {
-                    grid[x][y].ground = map[x][y][0];
-                    if (map[x][y].length === 2) {
-                        grid[x][y].object = map[x][y][1];
+                    grid[x][y].ground = map.grid[x][y][0];
+                    if (map.grid[x][y].length === 2) {
+                        grid[x][y].object = map.grid[x][y][1];
                     }
                 }
             }
+
+            privateObjects = map.privateObjects;
 
             // after map is loaded, start server loops
             setTimeout(saveServer, base.constants.serverSaveTime);
@@ -363,15 +370,18 @@ function gameServer(io) {
         console.log('Server backup: ', Date());
 
         // save ground and objects into map.json
-        let map = [];
+        let map = {
+            grid: [],
+            privateObjects: privateObjects
+        };
 
         grid.forEach(function (column, x) {
-            map[x] = [];
+            map.grid[x] = [];
             column.forEach(function (cell, y) {
-                map[x][y] = [];
-                map[x][y].push(cell.ground);
+                map.grid[x][y] = [];
+                map.grid[x][y].push(cell.ground);
                 if (typeof cell.object !== 'undefined') {
-                    map[x][y].push(cell.object);
+                    map.grid[x][y].push(cell.object);
                 }
             });
         });
@@ -952,6 +962,19 @@ function gameServer(io) {
                     delay();
                     if (Math.random() > object.durability) {
                         delete grid[newPos.x][newPos.y].object;
+                    }
+                } else if (object.type === 'private') {
+                    // owner of the structure can walk through, other try to break
+                    if (privateObjects[newPos.x + '.' + newPos.y] === player.name) {
+                        moveOnGrid(player, newPos);
+                        updateViewport();
+                        delay();
+                    } else {
+                        emit('msg', 'You hit ' + object.name);
+                        delay();
+                        if (Math.random() > object.durability) {
+                            delete grid[newPos.x][newPos.y].object;
+                        }
                     }
                 } else if (object.type === 'resource') {
                     let req = {
