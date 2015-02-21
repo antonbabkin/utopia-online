@@ -2,9 +2,10 @@ output,inputs.0.name,inputs.0.count,inputs.1.name,inputs.1.count,skill,level,fac
 Leather shirt,Leather,2,,,crafting,30,
 Leather pants,Leather,1,,,crafting,0,
 Wooden sword,Log,1,Leather,1,crafting,10,
-Wooden wall,Log,2,,,crafting,20,
+Wooden wall,Log,1,,,crafting,20,
 Stone wall,Stone,2,,,crafting,40,Workbench
 Campfire,Log,1,,,crafting,0,
 Workbench,Log,3,Stone,1,crafting,30,
 Cooked meat,Raw meat,1,,,crafting,0,Campfire
-Wooden door,Log,2,,,crafting,0,
+Wooden door,Log,1,,,crafting,0,
+Home claim,Leather,1,,,crafting,0,

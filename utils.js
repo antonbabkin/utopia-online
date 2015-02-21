@@ -40,19 +40,19 @@ function utilsClosure() {
 
     // returns a new coordinates object, offset from original ones
     utils.coordsOffset = function (coords, xOffset, yOffset) {
-        return {
+        return utils.wrapOverWorld({
             x: coords.x + xOffset,
             y: coords.y + yOffset
-        };
+        });
     };
 
     // coordinates of 4 tiles around the given coordinates
     utils.coordsAround = function (coords) {
         return {
-            n: utils.wrapOverWorld(utils.coordsOffset(coords, 0, -1)),
-            e: utils.wrapOverWorld(utils.coordsOffset(coords, 1, 0)),
-            s: utils.wrapOverWorld(utils.coordsOffset(coords, 0, 1)),
-            w: utils.wrapOverWorld(utils.coordsOffset(coords, -1, 0))
+            n: utils.coordsOffset(coords, 0, -1),
+            e: utils.coordsOffset(coords, 1, 0),
+            s: utils.coordsOffset(coords, 0, 1),
+            w: utils.coordsOffset(coords, -1, 0)
         };
     };
 

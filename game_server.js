@@ -39,7 +39,190 @@ function gameServer(io) {
                 cells[dir] = grid[cells[dir].x][cells[dir].y];
             });
             return cells;
+        },
+        isWall: function(cell) {
+            if (typeof cell.object === 'undefined') {
+                return false;
+            } else {
+                return !base.constants.wallBids.every(function (bid) {
+                    return cell.object !== bid;
+                });
+            }
+        },
+        markHome: function (start) {
+            // check if territory around start is enclosed by rectangular shaped wall
+            // if it is, mark all interior sells as home
+            // now only rectangular shape and only within viewport
+            // todo: add claiming item, erase claimed area if one of the walls falls
+
+            let walls = {};
+
+
+            // find walls around start
+            function findWall(dx, dy) {
+                // find wall in the direction of vector dx, dy
+                // one of directions must be = 0, another 1 or -1
+                let xy = start;
+                for (let i = 1; i < 8; i += 1) {
+                    xy = utils.coordsOffset(xy, dx, dy);
+                    if (utils.grid.isWall(grid[xy.x][xy.y])) {
+                        if (dy === 0) {
+                            return xy.x;
+                        } else {
+                            return xy.y;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            walls.n = findWall(0, -1);
+            walls.e = findWall(1, 0);
+            walls.s = findWall(0, 1);
+            walls.w = findWall(-1, 0);
+
+            let hasWallsAroundStart = ['n', 'e', 's', 'w'].every(function (dir) {
+                return walls[dir] !== false;
+            });
+
+            if (!hasWallsAroundStart) {
+                return false;
+            }
+
+            // check if all 4 walls are solid
+            let xy = {x: walls.w, y: walls.n};
+            while (true) {
+                // north and south walls
+                if (!utils.grid.isWall(grid[xy.x][walls.n]) || !utils.grid.isWall(grid[xy.x][walls.s])) {
+                    return false;
+                }
+                if (xy.x === walls.e) {
+                    break;
+                }
+                xy = utils.coordsOffset(xy, 1, 0);
+            }
+            xy = utils.coordsOffset({x: walls.w, y: walls.n}, 0, 1);
+            while (true) {
+                // west and east walls
+                if (!utils.grid.isWall(grid[walls.w][xy.y]) || !utils.grid.isWall(grid[walls.e][xy.y])) {
+                    return false;
+                }
+                if (xy.y === walls.s) {
+                    break;
+                }
+                xy = utils.coordsOffset(xy, 0, 1);
+            }
+
+            // all good: claim territory
+            let diag = utils.vector(
+                {x: walls.w, y: walls.n},
+                {x: walls.e, y: walls.s}
+            );
+
+            let nw = {x: walls.w, y: walls.n};
+            for (let x = 0; x <= diag.x; x += 1) {
+                for (let y = 0; y <= diag.y; y +=1) {
+                    xy = utils.coordsOffset(nw, x, y);
+                    grid[xy.x][xy.y].home = true;
+                }
+            }
+            return true;
+        },
+        eraseHome: function (start) {
+            // erase all home cells starting from @start
+            delete grid[start.x][start.y].home;
+            (function eraseNeighbors(cell) {
+                let neighbors = utils.coordsAround(cell),
+                    neighbor;
+                ['n', 'e', 's', 'w'].forEach(function (dir) {
+                    neighbor = neighbors[dir];
+                    if (grid[neighbor.x][neighbor.y].home === true) {
+                        delete grid[neighbor.x][neighbor.y].home;
+                        eraseNeighbors(neighbor);
+                    }
+                });
+            }(start));
         }
+
+
+
+        /*
+        todo: this is unfinished function that automatically detects area enclosed by walls
+        does not work, because grid cell objects don't have x, y properties
+        could be redone with coordsAround...
+        For now going for a simple approach in markHome + eraseHome
+        ,
+        markEnclosure: function (start) {
+            // Detects and marks "inside" cells of the grid, including walls
+            // If start cell is a wall, begin with it
+            // If start cell is empty, begin with any neighboring wall
+            // This function should be called on empty cell if that cell was known to be a part of enclosure
+            function isWall(cell) {
+                if (typeof cell.object === 'undefined') {
+                    return false;
+                } else {
+                    return !base.constants.wallBids.every(function (bid) {
+                        return cell.object !== bid;
+                    });
+                }
+            }
+
+            // Find all walls connected with start
+            let connectedWalls = [];
+            if (isWall(start)) {
+                connectedWalls.push(start);
+            }
+            (function addNeighborWalls(cell) {
+                let neighbors = utils.grid.cellsAround(cell),
+                    neighbor;
+                ['n', 'e', 's', 'w'].forEach(function (dir) {
+                    neighbor = neighbors[dir];
+                    if (isWall(neighbor) && connectedWalls.indexOf(neighbor) === -1) {
+                        // if it is a wall and not in the list yet, then add and continue adding from it recursively
+                        connectedWalls.push(neighbor);
+                        addNeighborWalls(neighbor);
+                    }
+                });
+            }(start));
+
+            // remove "dead ends" - parts of the wall that stand out
+            // they only have one connection
+            (function removeDeadEnds() {
+                let neighbors, connections, neighbor, deadEnds = [];
+
+                connectedWalls.forEach(function (cell) {
+                    neighbors = utils.grid.cellsAround(cell);
+                    connections = 0;
+                    ['n', 'e', 's', 'w'].forEach(function (dir) {
+                        neighbor = neighbors[dir];
+                        if (isWall(neighbor)) {
+                            connections += 1;
+                        }
+                    });
+                    if (connections < 2) {
+                        deadEnds.push(cell);
+                    }
+                });
+
+                if (deadEnds.length > 0) {
+                    deadEnds.forEach(function (cell) {
+                        connectedWalls.splice(connectedWalls.indexOf(cell), 1);
+                    });
+                    // recursive call: some cells could now become dead ends
+                    removeDeadEnds();
+                }
+            }());
+
+            if (connectedWalls.length === 0) {
+                return;
+            }
+
+            // grid borders of a minimal rectangle that encompasses all walls
+            let left, right, top, bottom;
+            connectedWalls.forEach(function (cell) {
+
+            });
+        }*/
     };
 
 
@@ -91,34 +274,45 @@ function gameServer(io) {
         useItem: function (player, invSlot) {
             let inventory = player.getInventory();
             let itemBid = inventory[invSlot];
-            if (typeof itemBid !== 'undefined') {
-                let item = base.items[itemBid];
-                if (item.type === 'equipment') {
-                    let equipment = player.getEquipment();
-                    let equippedBid = equipment[item.eqSlot]; // previously equipped in that slot
-                    equipment[item.eqSlot] = item.bid;
-                    utils.inventory.removeItem(player, itemBid);
-                    if (typeof equippedBid !== 'undefined') {
-                        utils.inventory.addItem(player, equippedBid);
+            if (typeof itemBid === 'undefined') {
+                return;
+            }
+
+            let item = base.items[itemBid];
+            if (item.type === 'equipment') {
+                let equipment = player.getEquipment();
+                let equippedBid = equipment[item.eqSlot]; // previously equipped in that slot
+                equipment[item.eqSlot] = item.bid;
+                utils.inventory.removeItem(player, itemBid);
+                if (typeof equippedBid !== 'undefined') {
+                    utils.inventory.addItem(player, equippedBid);
+                }
+                player.updateStats();
+                player.emit('equipment', equipment);
+            } else if ((item.type === 'structure' || item.type === 'facility') && typeof grid[player.x][player.y].object === 'undefined') {
+                utils.inventory.removeItem(player, itemBid);
+                player.delayedAction(function () {
+                    let objectId = base.objectId[item.name];
+                    grid[player.x][player.y].object = objectId;
+                    if (base.objects[objectId].type === 'private') {
+                        privateObjects[player.x + '.' + player.y] = player.name;
                     }
-                    player.updateStats();
-                    player.emit('equipment', equipment);
-                } else if ((item.type === 'structure' || item.type === 'facility') && typeof grid[player.x][player.y].object === 'undefined') {
+                });
+            } else if (typeof item.heals !== 'undefined') {
+                let stats = player.getStats();
+                stats.hp = Math.min(stats.maxHp, stats.hp + item.heals);
+                player.emit('stats', stats);
+                utils.inventory.removeItem(player, itemBid);
+            } else if (item.name === 'Home claim') {
+                if (utils.grid.markHome(player)) {
+                    player.emit('msg', 'Claim successful');
                     utils.inventory.removeItem(player, itemBid);
-                    player.delayedAction(function () {
-                        let objectId = base.objectId[item.name];
-                        grid[player.x][player.y].object = objectId;
-                        if (base.objects[objectId].type === 'private') {
-                            privateObjects[player.x + '.' + player.y] = player.name;
-                        }
-                    });
-                } else if (typeof item.heals !== 'undefined') {
-                    let stats = player.getStats();
-                    stats.hp = Math.min(stats.maxHp, stats.hp + item.heals);
-                    player.emit('stats', stats);
-                    utils.inventory.removeItem(player, itemBid);
+                    //todo: updateInHome()
+                } else {
+                    player.emit('msg', 'Claim failed');
                 }
             }
+
         },
         dropItem: function (player, invSlot) {
             let inventory = player.getInventory();
@@ -401,8 +595,8 @@ function gameServer(io) {
     // environment update loop
     function updateEnvironment() {
         // new trees grow and wood is broken
-        grid.forEach(function (column) {
-            column.forEach(function (cell) {
+        grid.forEach(function (column, x) {
+            column.forEach(function (cell, y) {
                 if (typeof cell.object === 'undefined') {
                     // no object: can grow
                     let ground = base.grounds[cell.ground];
@@ -416,6 +610,11 @@ function gameServer(io) {
                         if (typeof object.change.bid !== 'undefined') {
                             cell.object = object.change.bid;
                         } else {
+                            // object dies
+                            if (cell.home === true && utils.grid.isWall(cell)) {
+                                utils.grid.eraseHome({x: x, y: y});
+                                // todo: also should do updateInHome() for all relevant players
+                            }
                             delete cell.object;
                         }
                     }
@@ -735,6 +934,9 @@ function gameServer(io) {
                     });
                 }
             });
+            if (player.inHome) {
+                stats.bonus.crafting += 100;
+            }
             base.constants.stats.forEach(function (stat) {
                 stats[stat] = stats.base[stat] + stats.bonus[stat];
             });
@@ -759,6 +961,7 @@ function gameServer(io) {
 
         function updateViewport() {
             // part of the grid visible to player, that is emitted on update
+            // this function needs to be called when player changes location
             viewport = [];
             let x1, y1, xy;
             let xl = player.x - base.constants.viewport.centerX;
@@ -773,6 +976,7 @@ function gameServer(io) {
                     viewport[x1 - xl][y1 - yl] = grid[xy.x][xy.y];
                 }
             }
+            updateInHome();
         }
 
         function delay() {
@@ -830,6 +1034,14 @@ function gameServer(io) {
         function emitViewportLoop() {
             emit('viewport', viewport);
             emitViewportTimer = setTimeout(emitViewportLoop, base.constants.playerUpdateTime);
+        }
+
+        function updateInHome() {
+            let homeCell = (grid[player.x][player.y].home === true);
+            if (player.inHome !== homeCell) {
+                player.inHome = homeCell;
+                updateStats();
+            }
         }
 
         // -----------------------------------------------------------
@@ -892,14 +1104,12 @@ function gameServer(io) {
 
         addToGrid(player); // add new player object to global lists
 
-        updateStats();
         actionDelay = base.constants.actionDelay / stats.speed;
         onDelay = false;
         emit('login', {success: true, name: player.name});
         emit('inventory', inventory);
         emit('equipment', equipment);
-        emit('stats', stats);
-        updateViewport();
+        updateViewport(); // will also call updateInHome(), create .inHome property, updateStats() and emit 'stats'
         emitViewportLoop(); // start update loop
 
         console.log('Player connected: ' + player.name);
@@ -952,6 +1162,10 @@ function gameServer(io) {
                     if (!utils.inventory.full(player)) {
                         delayedAction(function () {
                             utils.inventory.addItem(player, base.itemId[object.name]);
+                            if (grid[newPos.x][newPos.y].home === true && utils.grid.isWall(grid[newPos.x][newPos.y])) {
+                                utils.grid.eraseHome(newPos);
+                                updateInHome();
+                            }
                             delete grid[newPos.x][newPos.y].object;
                         });
                     }
@@ -961,6 +1175,10 @@ function gameServer(io) {
                     emit('msg', 'You hit ' + object.name);
                     delay();
                     if (Math.random() > object.durability) {
+                        if (grid[newPos.x][newPos.y].home === true && utils.grid.isWall(grid[newPos.x][newPos.y])) {
+                            utils.grid.eraseHome(newPos);
+                            updateInHome();
+                        }
                         delete grid[newPos.x][newPos.y].object;
                     }
                 } else if (object.type === 'private') {
@@ -973,6 +1191,10 @@ function gameServer(io) {
                         emit('msg', 'You hit ' + object.name);
                         delay();
                         if (Math.random() > object.durability) {
+                            if (grid[newPos.x][newPos.y].home === true && utils.grid.isWall(grid[newPos.x][newPos.y])) {
+                                utils.grid.eraseHome(newPos);
+                                updateInHome();
+                            }
                             delete grid[newPos.x][newPos.y].object;
                         }
                     }

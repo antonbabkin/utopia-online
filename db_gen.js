@@ -57,6 +57,15 @@ function afterParse() {
         })
     });
 
+    db.constants.wallBids = [
+        db.objectId['Wooden wall'],
+        db.objectId['Wooden wall (hardened)'],
+        db.objectId['Stone wall'],
+        db.objectId['Stone wall (hardened)'],
+        db.objectId['Wooden door']
+    ];
+
+
     out += 'function baseClosure() {\n';
     out += '\t"use strict";\n';
     out += '\treturn ' + JSON.stringify(db) + ';\n';
