@@ -490,7 +490,7 @@ function gameServer(io) {
     let nextMobId = 0;
     let worldSpawnTable = createSpawnTable();
 
-    readMap();
+    readData();
 
     spawnMobs();
 
@@ -531,7 +531,7 @@ function gameServer(io) {
 
     // Load ground and object data from disk into grid cells
     // and start server loops upon completion
-    function readMap() {
+    function readData() {
         fs.readFile('map.json', 'utf8', function (err, data) {
             if (err) {
                 console.error('Failed to read map.json');
@@ -543,9 +543,19 @@ function gameServer(io) {
             let map = JSON.parse(data);
             for (let x = 0; x < base.constants.world.width; x += 1) {
                 for (let y = 0; y < base.constants.world.height; y += 1) {
-                    grid[x][y].ground = map.grid[x][y][0];
-                    if (map.grid[x][y].length === 2) {
-                        grid[x][y].object = map.grid[x][y][1];
+                    grid[x][y].ground = map.grid[x][y].g;
+                    if (typeof map.grid[x][y].o !== 'undefined') {
+                        grid[x][y].object = map.grid[x][y].o;
+                    }
+                    if (typeof map.grid[x][y].b !== 'undefined') {
+                        createBag({
+                            x: x,
+                            y: y,
+                            items: map.grid[x][y][2]
+                        });
+                    }
+                    if (map.grid[x][y].h === true) {
+                        grid[x][y].home = true;
                     }
                 }
             }
@@ -555,6 +565,17 @@ function gameServer(io) {
             // after map is loaded, start server loops
             setTimeout(saveServer, base.constants.serverSaveTime);
             setTimeout(updateEnvironment, base.constants.environmentUpdateTime);
+
+            // read players database
+            fs.readFile('players.json', 'utf8', function (err, data) {
+                if (err) {
+                    console.error('Failed to read players.json');
+                    console.log(err);
+                    return;
+                }
+                playersData = JSON.parse(data);
+            });
+
         });
     }
 
@@ -572,21 +593,36 @@ function gameServer(io) {
         grid.forEach(function (column, x) {
             map.grid[x] = [];
             column.forEach(function (cell, y) {
-                map.grid[x][y] = [];
-                map.grid[x][y].push(cell.ground);
+                map.grid[x][y] = {};
+                map.grid[x][y].g = cell.ground;
                 if (typeof cell.object !== 'undefined') {
-                    map.grid[x][y].push(cell.object);
+                    map.grid[x][y].o = cell.object;
+                }
+                if (typeof cell.bag !== 'undefined') {
+                    map.grid[x][y].b = cell.bag.items;
+                }
+                if (cell.h === true) {
+                    map.grid[x][y].h = true;
                 }
             });
         });
 
         fs.writeFile('map.json', JSON.stringify(map), function (err) {
             if (err) {
-                console.error('Failed to write generated map to map.json');
+                console.error('Failed to write current map to map.json');
                 console.log(err);
                 return;
             }
             console.log('---- map.json saved successfully');
+        });
+
+        fs.writeFile('players.json', JSON.stringify(playersData), function (err) {
+            if (err) {
+                console.error('Failed to write playersData');
+                console.log(err);
+                return;
+            }
+            console.log('---- playersData saved successfully');
         });
 
         setTimeout(saveServer, base.constants.serverSaveTime);
@@ -869,24 +905,32 @@ function gameServer(io) {
             };
             bag.getItem = getItem;
             bag.addItems = addItems;
-            lifetimeTimer = setTimeout(destroy, base.constants.bagLifetime);
+            lifetimeTimer = setTimeout(lifetime, base.constants.bagLifetime);
             grid[bag.x][bag.y].bag = bag;
         }
 
-        function destroy() {
+        function lifetime() {
             clearTimeout(lifetimeTimer);
-            delete grid[bag.x][bag.y].bag;
+            if (grid[bag.x][bag.y].object === base.objectId['Chest']) {
+                // bag stays as long as there is a chest object on the tile
+                lifetimeTimer = setTimeout(lifetime, base.constants.bagLifetime);
+            } else {
+                delete grid[bag.x][bag.y].bag;
+                console.log('bag dies at ', bag.x, bag.y); // debug quick death of bag when chest is destroyed
+            }
         }
 
         function renewTimer() {
             clearTimeout(lifetimeTimer);
-            lifetimeTimer = setTimeout(destroy, base.constants.bagLifetime);
+            lifetimeTimer = setTimeout(lifetime, base.constants.bagLifetime);
+            console.log('renew bag timer at  ', bag.x, bag.y); // debug quick death of bag when chest is destroyed
         }
 
         function getItem(itemNumber) {
             bag.items.splice(itemNumber, 1);
             if (bag.items.length === 0) {
-                destroy();
+                clearTimeout(lifetimeTimer);
+                delete grid[bag.x][bag.y].bag;
             } else {
                 renewTimer();
             }
@@ -897,6 +941,8 @@ function gameServer(io) {
             bag.items = bag.items.concat(items);
             renewTimer();
         }
+
+        bag.renewTimer = renewTimer;
     }
 
     function createPlayer(socket, name) {
@@ -1171,7 +1217,6 @@ function gameServer(io) {
                     }
                 } else if (object.type === 'structure') {
                     // structures are attacked and destroyed on success
-                    // todo: make it depend on player stats, equips...
                     emit('msg', 'You hit ' + object.name);
                     delay();
                     if (Math.random() > object.durability) {
@@ -1188,13 +1233,17 @@ function gameServer(io) {
                         updateViewport();
                         delay();
                     } else {
-                        emit('msg', 'You hit ' + object.name);
+                        emit('msg', 'You hit ' + privateObjects[newPos.x + '.' + newPos.y] + '\'s ' + object.name);
                         delay();
                         if (Math.random() > object.durability) {
                             if (grid[newPos.x][newPos.y].home === true && utils.grid.isWall(grid[newPos.x][newPos.y])) {
                                 utils.grid.eraseHome(newPos);
                                 updateInHome();
                             }
+                            if (object.name === 'Chest' && typeof grid[newPos.x][newPos.y].bag !== 'undefined') {
+                                grid[newPos.x][newPos.y].bag.renewTimer();
+                            }
+
                             delete grid[newPos.x][newPos.y].object;
                         }
                     }

@@ -9,3 +9,4 @@ Stone wall (hardened),stone_wall,structure,0.95,,,,,0.02
 Campfire,campfire,facility,,,,,,0.05
 Workbench,workbench,facility,,,,,,0.02
 Wooden door,wooden_door,private,0.95,,,,,
+Chest,chest,private,0.95,,,,,

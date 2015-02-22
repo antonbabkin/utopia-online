@@ -117,7 +117,9 @@ window.addEventListener('load', function clientLoader() {
                 panel: document.getElementById('panelCraft')
             }
         },
-        crafts: document.getElementById('crafts')
+        crafts: document.getElementById('crafts'),
+        bag: document.getElementById('bag_window'),
+        bagTable: document.getElementById('bag_window_items')
     };
 
     var ui = {};
@@ -190,6 +192,7 @@ window.addEventListener('load', function clientLoader() {
                     ui.inventory.menuSlot = slot;
                     var item = base.items[inventory[slot]];
                     document.getElementById('item_name').innerHTML = item.name;
+
                     var menu = document.getElementById('itemMenu');
 
                     menu.style.top = (70 + document.getElementById('inv' + slot).offsetTop) + 'px';
@@ -201,9 +204,13 @@ window.addEventListener('load', function clientLoader() {
         document.getElementById('inv' + i).addEventListener('click', (function (slot) {
             // left click
             // this closure "remembers" particular value of @i in local variable @slot
-            return function (event) {
+            return function () {
                 if (typeof inventory[slot] !== 'undefined') {
-                    socket.emit('invUse', slot);
+                    if (div.bag.style.display === 'none') {
+                        socket.emit('invUse', slot);
+                    } else {
+                        socket.emit('drop', slot);
+                    }
                 }
             }
         }(i)), false);
@@ -332,7 +339,7 @@ window.addEventListener('load', function clientLoader() {
                     socket.emit('pick', ui.ground.slot0 + slot);
                 }
             }
-        }(i)));
+        }(i)), false);
     }
     // click left-right arrows
     ui.ground.left.addEventListener('click', function () {
@@ -340,13 +347,100 @@ window.addEventListener('load', function clientLoader() {
             ui.ground.slot0 -= 3;
             ui.ground.update();
         }
-    });
+    }, false);
     ui.ground.right.addEventListener('click', function () {
         if (ui.ground.slot0 + 3 < viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].bag.items.length) {
             ui.ground.slot0 += 3;
             ui.ground.update();
         }
-    });
+    }, false);
+
+    // -------------------------
+    // Bag window
+    // -------------------------
+    ui.bag = {
+        slot0: 0,
+        left: document.getElementById('bag_window_left_arrow'),
+        right: document.getElementById('bag_window_right_arrow'),
+        update: function () {
+            // todo: creates list of slots every time. it is not reliable
+            // need to change
+            var bag = viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].bag,
+                i, itemBid, slot;
+
+            if (typeof bag === 'undefined') {
+                for (i = 0; i < 25; i += 1) {
+                    document.getElementById('bag_' + i).style.backgroundImage = '';
+                }
+                ui.bag.left.style.display = 'none';
+                ui.bag.right.style.display = 'none';
+            } else {
+                if (bag.items.length < 26) {
+                    ui.bag.left.style.display = 'none';
+                    ui.bag.right.style.display = 'none';
+                } else {
+                    ui.bag.left.style.display = '';
+                    ui.bag.right.style.display = '';
+                }
+                for (i = 0; i < 25; i += 1) {
+                    slot = ui.bag.slot0 + i;
+                    itemBid = bag.items[slot];
+
+                    if (typeof itemBid === 'undefined') {
+                        document.getElementById('bag_' + i).style.backgroundImage = '';
+                    } else {
+                        document.getElementById('bag_' + i).style.backgroundImage =
+                            'url(public/' + base.items[bag.items[slot]].image + '.png)';
+                    }
+
+                }
+            }
+        }
+    };
+    // click left-right arrows
+    ui.bag.left.addEventListener('click', function () {
+        if (ui.bag.slot0 > 0) {
+            ui.bag.slot0 -= 25;
+            ui.bag.update();
+        }
+    }, false);
+    ui.bag.right.addEventListener('click', function () {
+        if (ui.bag.slot0 + 25 < viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].bag.items.length) {
+            ui.bag.slot0 += 25;
+            ui.bag.update();
+        }
+    }, false);
+
+    document.getElementById('bag_window_open').addEventListener('click', function () {
+        div.bag.style.display = 'block';
+        ui.bag.update();
+    }, false);
+    document.getElementById('bag_window_close').addEventListener('click', function () {
+        div.bag.style.display = 'none';
+    }, false);
+
+    (function () {
+        // fill bag window table with clickable cells
+        var i, j, tr, td, slot;
+        for (i = 0; i < 5; i += 1) {
+            tr = document.createElement('tr');
+            div.bagTable.appendChild(tr);
+            for (j = 0; j < 5; j += 1) {
+                slot = i * 5 + j;
+                td = document.createElement('td');
+                td.id = 'bag_' + slot;
+                td.className = 'invSlot';
+                td.addEventListener('click', (function (s) {
+                    // this closure "remembers" particular value of @slot in local variable @s
+                    return function () {
+                        socket.emit('pick', ui.bag.slot0 + s);
+                    }
+                }(slot)), false);
+                tr.appendChild(td);
+            }
+        }
+    }());
+
 
     // --------------------------
     // Notifications and chat
@@ -375,10 +469,14 @@ window.addEventListener('load', function clientLoader() {
         }
     }, false);
 
-
+    // -------------------------
+    // Settings
+    // -------------------------
     ui.settings = {
         mute: true
     };
+
+
 
     // -------------------------
     // Audio
@@ -468,6 +566,9 @@ window.addEventListener('load', function clientLoader() {
         self = viewport[base.constants.viewport.centerX][base.constants.viewport.centerY].char;
         updateViewport();
         ui.ground.update();
+        if (div.bag.style.display !== 'none') {
+            ui.bag.update();
+        }
     });
 
     socket.on('inventory', function onInventory(inv) {
@@ -585,7 +686,7 @@ window.addEventListener('load', function clientLoader() {
                 // bags
                 // if present, attribute is of type "object"
                 // if empty, attribute is undefined
-                sprites[i][j].bag.visible = (typeof cell.bag !== 'undefined');
+                sprites[i][j].bag.visible = (typeof cell.bag !== 'undefined' && cell.object !== base.objectId['Chest']);
 
 
                 // characters

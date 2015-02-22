@@ -118,6 +118,14 @@
             div#itemMenu p:hover {
                 background-color: yellow;
             }
+            div#bag_window_items div.bag_slot {
+                border: 1px coral solid;
+                margin: 1px;
+                cursor: pointer;
+                width: 32px;
+                height: 32px;
+                display: inline-block;
+            }
 
         </style>
     </head>
@@ -131,7 +139,14 @@
                 <p id="loginStatus"></p>
             </div>
         </div>
-        <div id="canvasDiv" style="position: absolute; top: 0; left: 0; width: 480px; height: 480px;"></div>
+        <div id="canvasDiv" style="position: absolute; top: 0; left: 0; width: 480px; height: 480px;">
+            <div id="bag_window" style="display: none; z-index: 10; position: absolute; top: 130px; left: 100px; width: 240px; background-color: greenyellow;">
+                <div id="bag_window_close" style="position: absolute; top: 0; right: 0; border: 1px coral solid; cursor: pointer;">X</div>
+                <table id="bag_window_items" style="margin: auto;"></table>
+                <div id="bag_window_left_arrow" style="position: absolute; top: 75px; left: 5px; width: 16px; height: 32px; background-image: url(public/left_arrow.png); cursor: pointer;"></div>
+                <div id="bag_window_right_arrow" style="position: absolute; top: 75px; right: 5px; width: 16px; height: 32px; background-image: url(public/right_arrow.png); cursor: pointer;"></div>
+            </div>
+        </div>
         <div id="uiPanel" style="position: absolute; top: 0; left: 480px; width: 240px; height: 480px; background-color: skyblue;">
             <div id="tabInv" class="tab" style="left: 0; border-color: coral;">
                 <img src="public/bag.png">
@@ -205,11 +220,12 @@
             <div id="groundPanel">
                 <table style="margin: auto;">
                     <tr>
-                        <td id="groundLeftArrow" class="invSlot" style="border: 0; background-image: url(public/left_arrow.png);"></td>
+                        <td id="groundLeftArrow" class="invSlot" style="border: 0; width: 16px; background-image: url(public/left_arrow.png);"></td>
                         <td id="ground0" class="invSlot"></td>
                         <td id="ground1" class="invSlot"></td>
                         <td id="ground2" class="invSlot"></td>
-                        <td id="groundRightArrow" class="invSlot" style="border: 0; background-image: url(public/right_arrow.png);"></td>
+                        <td id="groundRightArrow" class="invSlot" style="border: 0; width: 16px; background-image: url(public/right_arrow.png);"></td>
+                        <td id="bag_window_open" class="invSlot" style="border: 0; background-image: url(public/magnifying_glass.png);"></td>
                     </tr>
                 </table>
             </div>

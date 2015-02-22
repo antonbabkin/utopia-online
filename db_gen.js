@@ -98,7 +98,7 @@ db.constants = {
     mobLimit: 16,
     bagLifetime: 60 * 1000,
     playerUpdateTime: 125,
-    serverSaveTime: 60 * 60 * 1000,
+    serverSaveTime: 60 * 1000,
     environmentUpdateTime: 5 * 60 * 1000,
     maxInventory: 20,
     eqSlots: [
