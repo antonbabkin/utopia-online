@@ -413,6 +413,7 @@ window.addEventListener('load', function clientLoader() {
 
     document.getElementById('bag_window_open').addEventListener('click', function () {
         div.bag.style.display = 'block';
+        ui.bag.slot0 = 0;
         ui.bag.update();
     }, false);
     document.getElementById('bag_window_close').addEventListener('click', function () {

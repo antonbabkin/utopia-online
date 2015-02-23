@@ -31,6 +31,12 @@ function afterParse() {
         if (typeof ground.grow !== 'undefined') {
             ground.grow.bid = db.objectId[ground.grow.name];
         }
+        if (typeof ground.change !== 'undefined') {
+            ground.change.bid = db.groundId[ground.change.name];
+        }
+        if (typeof ground.output !== 'undefined') {
+            ground.output = db.itemId[ground.output];
+        }
     });
     db.objects.forEach(function (object) {
         if (typeof object.output !== 'undefined') {
@@ -98,7 +104,7 @@ db.constants = {
     mobLimit: 16,
     bagLifetime: 60 * 1000,
     playerUpdateTime: 125,
-    serverSaveTime: 60 * 1000,
+    serverSaveTime: 5 * 60 * 1000,
     environmentUpdateTime: 5 * 60 * 1000,
     maxInventory: 20,
     eqSlots: [

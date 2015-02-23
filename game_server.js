@@ -311,6 +311,44 @@ function gameServer(io) {
                 } else {
                     player.emit('msg', 'Claim failed');
                 }
+            } else if (item.type === 'ground') {
+                utils.inventory.removeItem(player, itemBid);
+                player.delayedAction(function () {
+                    grid[player.x][player.y].ground = base.groundId[item.name];
+                });
+            } else if (item.name === 'Wooden shovel') {
+                if (!utils.inventory.full(player)) {
+                    let cell = grid[player.x][player.y],
+                        ground = base.grounds[cell.ground];
+                    if (ground.type === 'cover') {
+                        // pick up floor and such
+                        player.delayedAction(function () {
+                            utils.inventory.addItem(player, base.itemId[ground.name]);
+                            cell.ground = ground.change.bid;
+                        });
+                    } else if (ground.type === 'resource') {
+                        let req = {
+                            skill: 'gathering',
+                            min: ground.level
+                        };
+                        if (utils.skill.canUse(player, req)) {
+                            player.emit('msg', 'You try gathering...');
+                            player.delayedAction(function () {
+                                // give item if skill succeeds
+                                if (utils.skill.use(player, req)) {
+                                    utils.inventory.addItem(player, ground.output);
+                                    player.emit('msg', 'Success!');
+                                } else{
+                                    player.emit('msg', 'Fail!');
+                                }
+                                if (Math.random() > item.durability) {
+                                    player.emit('msg', 'You shovel breaks');
+                                    utils.inventory.removeItem(player, itemBid);
+                                }
+                            });
+                        }
+                    }
+                }
             }
 
         },
@@ -354,7 +392,7 @@ function gameServer(io) {
                 let noFacilityNear = Object.keys(around).every(function (dir) {
                     return around[dir].object !== craft.facility;
                 });
-                !noFacilityNear && player.emit('msg', 'No facility near');
+                noFacilityNear && player.emit('msg', 'No facility near');
                 return (enoughInputs && !noFacilityNear);
             } else {
                 return enoughInputs;
@@ -630,12 +668,16 @@ function gameServer(io) {
 
     // environment update loop
     function updateEnvironment() {
+        // gound changes it's type
         // new trees grow and wood is broken
         grid.forEach(function (column, x) {
             column.forEach(function (cell, y) {
+                let ground = base.grounds[cell.ground];
+                if (typeof ground.change !== 'undefined' && Math.random() < ground.change.p) {
+                    cell.ground = ground.change.bid;
+                }
                 if (typeof cell.object === 'undefined') {
                     // no object: can grow
-                    let ground = base.grounds[cell.ground];
                     if (typeof ground.grow !== 'undefined' && Math.random() < ground.grow.p) {
                         cell.object = ground.grow.bid;
                     }
