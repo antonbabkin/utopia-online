@@ -142,87 +142,194 @@ function gameServer(io) {
                     }
                 });
             }(start));
-        }
+        },
+        addWall: function (xy) {
+            if (grid[xy.x][xy.y].enclosure !== true) {
+                utils.grid.markEnclosure(xy, true);
+            }
+        },
+        removeWall: function (xy) {
+            if (grid[xy.x][xy.y].enclosure !== true) {
+                return;
+            }
 
+            let neighbors = utils.coordsAround(xy),
+                neighbor;
+            if (!neighbors.every(function (dir) {
+                    neighbor = neighbors[dir];
+                    return (grid[neighbor.x][neighbor.y].enclosure === true);
+                })) {
+                // cell is on the edge of enclosure
+                delete grid[xy.x][xy.y].enclosure;
 
-
-        /*
-        todo: this is unfinished function that automatically detects area enclosed by walls
-        does not work, because grid cell objects don't have x, y properties
-        could be redone with coordsAround...
-        For now going for a simple approach in markHome + eraseHome
-        ,
-        markEnclosure: function (start) {
+                neighbors.forEach(function (dir) {
+                    neighbor = neighbors[dir];
+                    if (grid[neighbor.x][neighbor.y].enclosure === true && utils.grid.isWall(grid[neighbor.x][neighbor.y])) {
+                        utils.grid.markEnclosure(neighbor, false);
+                    }
+                });
+            }
+        },
+        markEnclosure: function (start, add) {
             // Detects and marks "inside" cells of the grid, including walls
-            // If start cell is a wall, begin with it
-            // If start cell is empty, begin with any neighboring wall
+            // Start cell must be a wall
             // This function should be called on empty cell if that cell was known to be a part of enclosure
-            function isWall(cell) {
-                if (typeof cell.object === 'undefined') {
+            // @start = {x, y} - cell to start search from
+            // @add - add (true) or remove (false) enclosure
+            function isWall(xy) {
+                if (typeof grid[xy.x][xy.y].object === 'undefined') {
                     return false;
                 } else {
                     return !base.constants.wallBids.every(function (bid) {
-                        return cell.object !== bid;
+                        return grid[xy.x][xy.y].object !== bid;
                     });
                 }
             }
 
-            // Find all walls connected with start
-            let connectedWalls = [];
-            if (isWall(start)) {
-                connectedWalls.push(start);
+            function xyStrToObj(xyStr) {
+                let xyArr = xyStr.split('.');
+                return {x: +xyArr[0], y: +xyArr[1]};
             }
-            (function addNeighborWalls(cell) {
-                let neighbors = utils.grid.cellsAround(cell),
-                    neighbor;
+
+            function xyObjToStr(xyObj) {
+                return xyObj.x + '.' + xyObj.y;
+            }
+
+            // Find all walls connected with start
+            let connectedWalls = [xyObjToStr(start)],
+                nw = {x: start.x, y: start.y},
+                se = {x: start.x, y: start.y}; // grid borders of a minimal rectangle that encompasses all walls
+            (function addNeighborWalls(xy) {
+                // todo: this does not work, with 4+ connected walls it is "RangeError: Maximum call stack size exceeded"
+                let neighbors = utils.coordsAround(xy),
+                    neighbor,
+                    xyStr;
                 ['n', 'e', 's', 'w'].forEach(function (dir) {
                     neighbor = neighbors[dir];
-                    if (isWall(neighbor) && connectedWalls.indexOf(neighbor) === -1) {
+                    xyStr = xyObjToStr(neighbor);
+                    if (isWall(neighbor) && connectedWalls.indexOf(xyStr) === -1) {
                         // if it is a wall and not in the list yet, then add and continue adding from it recursively
-                        connectedWalls.push(neighbor);
+                        connectedWalls.push(xyStr);
+                        console.log(connectedWalls);
+                        switch (dir) {
+                        case 'n':
+                            nw.y = neighbor.y;
+                            break;
+                        case 'e':
+                            se.x = neighbor.x;
+                            break;
+                        case 's':
+                            se.y = neighbor.y;
+                            break;
+                        case 'w':
+                            nw.x = neighbor.x;
+                            break;
+                        }
                         addNeighborWalls(neighbor);
                     }
                 });
             }(start));
 
-            // remove "dead ends" - parts of the wall that stand out
-            // they only have one connection
-            (function removeDeadEnds() {
-                let neighbors, connections, neighbor, deadEnds = [];
-
-                connectedWalls.forEach(function (cell) {
-                    neighbors = utils.grid.cellsAround(cell);
-                    connections = 0;
-                    ['n', 'e', 's', 'w'].forEach(function (dir) {
-                        neighbor = neighbors[dir];
-                        if (isWall(neighbor)) {
-                            connections += 1;
-                        }
-                    });
-                    if (connections < 2) {
-                        deadEnds.push(cell);
-                    }
-                });
-
-                if (deadEnds.length > 0) {
-                    deadEnds.forEach(function (cell) {
-                        connectedWalls.splice(connectedWalls.indexOf(cell), 1);
-                    });
-                    // recursive call: some cells could now become dead ends
-                    removeDeadEnds();
-                }
-            }());
-
             if (connectedWalls.length === 0) {
                 return;
             }
 
-            // grid borders of a minimal rectangle that encompasses all walls
-            let left, right, top, bottom;
-            connectedWalls.forEach(function (cell) {
+            nw = utils.coordsOffset(nw, -1, -1);
+            se = utils.coordsOffset(se, 1, 1);
 
+            let frameSize = utils.vector(nw, se);
+            frameSize.x += 1;
+            frameSize.y += 1;
+            console.log(nw, se, frameSize);
+            if (frameSize.x < 5 || frameSize.y < 5) {
+                return;
+                // frame not big enough for any enclosure
+            }
+
+
+
+            // "draw" rectangle around walls
+            // flood it starting from outside
+            // then check if there are any non-flooded non-wall cells inside
+            // if yes, then they are enclosed
+            let frame = [];
+            for (let i = 0; i < frameSize.x; i += 1) {
+                frame[i] = [];
+            }
+            (function flood(ij) {
+                if (ij.i < 0 || ij.j < 0 || ij.i >= frameSize.x || ij.j >= frameSize.y) {
+                    return;
+                }
+                console.log(ij);
+                frame[ij.i][ij.j] = true; // flood this cell if flood search got here: outer walls are flooded too
+                let xy = utils.wrapOverWorld({x: nw.x + ij.i, y: nw.y + ij.j});
+                if (connectedWalls.indexOf(xyObjToStr(xy)) === -1) {
+                    // not a wall: keep searching around
+                    flood({i: ij.i - 1, j: ij.j});
+                    flood({i: ij.i + 1, j: ij.j});
+                    flood({i: ij.i, j: ij.j - 1});
+                    flood({i: ij.i, j: ij.j + 1});
+                }
+            }({i: 0, j: 0}));
+
+            // debug: print frame in console
+            console.log('Frame around walls');
+            for (let j = 0; j < frameSize.y; j += 1) {
+                let str = '',
+                    xy;
+                for (let i = 0; i < frameSize.x; i += 1) {
+                    if (frame[i][j] === true) {
+                        xy = utils.wrapOverWorld({x: nw.x + i, y: nw.y + j});
+                        if (connectedWalls.indexOf(xyObjToStr(xy)) === -1) {
+                            str += '_';
+                        } else {
+                            str += 'O';
+                        }
+                    } else {
+                        str += '.';
+                    }
+                }
+                console.log(str);
+            }
+
+            let allFlooded = frame.every(function (col) {
+                return col.every(function (cell) {
+                    return cell === true;
+                });
             });
-        }*/
+
+            if (!add && allFlooded) {
+               // everything flooded: clear enclosure marks
+               (function clear(cell) {
+                   delete grid[cell.x][cell.y].enclosure;
+                   let neighbors = utils.coordsAround(cell),
+                       neighbor;
+                   ['n', 'e', 's', 'w'].forEach(function (dir) {
+                       neighbor = neighbors[dir];
+                       if (grid[neighbor.x][neighbor.y].enclosure === true) {
+                           clear(neighbor);
+                       }
+                   });
+               }(start));
+           } else if (add && !allFlooded) {
+                // enclosure found: mark
+                let xy;
+                connectedWalls.forEach(function (xyStr) {
+                    xy = xyStrToObj(xyStr);
+                    grid[xy.x][xy.y].enclosure = true;
+                });
+
+                frame.forEach(function (col, i) {
+                    col.forEach(function (cell, j) {
+                        if (cell === true) {
+                            return;
+                        }
+                        xy = utils.wrapOverWorld({x: nw.x + i, y: nw.y + j});
+                        grid[xy.x][xy.y].enclosure = true;
+                    });
+                });
+            }
+        }
     };
 
 
@@ -296,6 +403,13 @@ function gameServer(io) {
                     grid[player.x][player.y].object = objectId;
                     if (base.objects[objectId].type === 'private') {
                         privateObjects[player.x + '.' + player.y] = player.name;
+                    }
+
+                    // check enclosure when building walls
+                    if (!base.constants.wallBids.every(function (bid) {
+                            return objectId !== bid;
+                        })) {
+                        utils.grid.addWall({x: player.x, y: player.y});
                     }
                 });
             } else if (typeof item.heals !== 'undefined') {
@@ -693,6 +807,12 @@ function gameServer(io) {
                                 utils.grid.eraseHome({x: x, y: y});
                                 // todo: also should do updateInHome() for all relevant players
                             }
+
+                            if (utils.grid.isWall(cell)) {
+                                utils.grid.removeWall({x: x, y: y});
+                                // todo: also should do updateInHome() for all relevant players
+                            }
+
                             delete cell.object;
                         }
                     }
@@ -1219,18 +1339,18 @@ function gameServer(io) {
             };
 
             switch (dir) {
-                case 'e':
-                    newPos.x += 1;
-                    break;
-                case 'w':
-                    newPos.x -= 1;
-                    break;
-                case 'n':
-                    newPos.y -= 1;
-                    break;
-                case 's':
-                    newPos.y += 1;
-                    break;
+            case 'e':
+                newPos.x += 1;
+                break;
+            case 'w':
+                newPos.x -= 1;
+                break;
+            case 'n':
+                newPos.y -= 1;
+                break;
+            case 's':
+                newPos.y += 1;
+                break;
             }
 
             utils.wrapOverWorld(newPos);
@@ -1266,6 +1386,12 @@ function gameServer(io) {
                             utils.grid.eraseHome(newPos);
                             updateInHome();
                         }
+
+                        if (utils.grid.isWall(grid[newPos.x][newPos.y])) {
+                            utils.grid.removeWall({x: x, y: y});
+                            updateInHome();
+                        }
+
                         delete grid[newPos.x][newPos.y].object;
                     }
                 } else if (object.type === 'private') {
@@ -1282,6 +1408,12 @@ function gameServer(io) {
                                 utils.grid.eraseHome(newPos);
                                 updateInHome();
                             }
+
+                            if (utils.grid.isWall(grid[newPos.x][newPos.y])) {
+                                utils.grid.removeWall({x: x, y: y});
+                                updateInHome();
+                            }
+
                             if (object.name === 'Chest' && typeof grid[newPos.x][newPos.y].bag !== 'undefined') {
                                 grid[newPos.x][newPos.y].bag.renewTimer();
                             }

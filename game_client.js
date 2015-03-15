@@ -653,8 +653,12 @@ window.addEventListener('load', function clientLoader() {
                 sprite.position.y = j * base.constants.tile.height;
                 stage.addChild(sprite);
                 sprites[i][j][type] = sprite;
-
             });
+            sprite = new PIXI.Graphics();
+            sprite.beginFill(0xFF0000, 0.5);
+            sprite.drawRect(20 + i * base.constants.tile.width, 20 + j * base.constants.tile.height, 3, 3);
+            stage.addChild(sprite);
+            sprites[i][j].mark = sprite;
         }
     }
 
@@ -704,6 +708,10 @@ window.addEventListener('load', function clientLoader() {
                 } else {
                     sprites[i][j].char.visible = false;
                 }
+
+
+                // enclosure marks
+                sprites[i][j].mark.visible = (cell.enclosure === true);
             }
         }
     }

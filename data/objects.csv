@@ -3,9 +3,9 @@ Tree,tree,resource,0.8,Log,gathering,0,,
 Palm,palm,resource,0.9,Log,gathering,20,,
 Rock,rock,resource,0.95,Stone,gathering,30,,
 Wooden wall,wooden_wall,facility,,,,,Wooden wall (hardened),1
-Wooden wall (hardened),wooden_wall,structure,0.9,,,,,0.05
+Wooden wall (hardened),wooden_wall,structure,0.9,,,,,0.02
 Stone wall,stone_wall,facility,,,,,Stone wall (hardened),1
-Stone wall (hardened),stone_wall,structure,0.95,,,,,0.02
+Stone wall (hardened),stone_wall,structure,0.95,,,,,0.01
 Campfire,campfire,facility,,,,,,0.05
 Workbench,workbench,facility,,,,,,0.02
 Wooden door,wooden_door,private,0.95,,,,,
