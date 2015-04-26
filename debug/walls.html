@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Utopia Online - Walls algorithm</title>
+
+</head>
+<body>
+    Green = outside, brown = walls, yellow = interior. Left click to add a wall, right click to remove. Can hold mouse button and drag.
+    <canvas id="canvas">
+    Your toaster does not support HTML5 Canvas yet.
+    </canvas>
+    
+<script>
+/*
+This is a wall detection algorithm for Utopia Online.
+Generates random map with walls and detects all interiors on it. Interior is defined as an area surrounded by walls from 8 directions including diagonals. Walls can be added or removed dynamically, creating or destroying interiors on the fly.
+Map is visualized on canvas, walls can be added or removed with mouse.
+
+@map is a grid of game objects: '.' for empty ground, '#' for wall.
+@walls is a grid of detected walls and interiors: '#' for wall, 'O' for interior and '.' for outside.
+*/
+
+'use strict';
+
+function drawMap(m) {
+    // Draw map/walls on canvas.
+    
+    var co, ci, cw, cg, xx, yy, x, y;
+    
+    co = '#99ff33';
+    ci = '#ffff66';
+    cw = '#663300';
+    cg = '#000000';
+    xx = m.length;
+    yy = m[0].length;
+    
+    ctx.fillStyle = cg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    for (x = 0; x < xx; x += 1) {
+        for (y = 0; y < yy; y += 1) {
+            if (m[x][y] === '.') {
+                ctx.fillStyle = co;
+            } else if (m[x][y] === '#') {
+                ctx.fillStyle = cw;
+            } else if (m[x][y] === 'O') {
+                ctx.fillStyle = ci;
+            }
+            ctx.fillRect(1 + x * cellSize, 1 + y * cellSize, cellSize - 2, cellSize - 2);
+        }
+    }
+}
+
+function genMap(xx, yy, p) {
+    // Generate random map with walls and empty ground.
+
+    var x, y, m = [];
+    for (x = 0; x < xx; x += 1) {
+        m[x] = [];
+        for (y = 0; y < yy; y += 1) {
+            m[x][y] = (Math.random() < p) ? '#' : '.';
+        }
+    }
+    return m;
+}
+
+function coordinatesAround(m, x, y, diag) {
+    // Map coordinates of 4 (8 if diag===true) cells around (x, y)
+
+    var xx = m.length, yy = m[0].length;
+    var n = (y - 1 + yy) % yy,
+        e = (x + 1) % xx,
+        s = (y + 1) % yy,
+        w = (x - 1 + xx) % xx;
+    var list = [[x, n], [e, y], [x, s], [w, y]];
+    if (diag === true) {
+        list.push([e, n], [e, s], [w, s], [w, n]);
+    }
+    return list;
+}
+
+
+function findConnectedWalls(m, sx, sy) {
+    // Start at (sx,sy) and flood all walls connected on 4 sides (no diagonals)
+
+    var cw = [];
+    var str, iter = 0;
+    
+    (function flood(x, y) {
+        iter += 1;
+        if (m[x][y] === '#') {
+            // instead of 'x.y', real code can either use grid cells (objects, saved in cw by reference) or single-number coordinate of 1-dimensional array - flattened grid
+            str = x + '.' + y;
+            if (cw.indexOf(str) === -1) {
+                cw.push(str);
+                coordinatesAround(m, x, y).forEach(function (xy) {
+                    flood(xy[0], xy[1]);
+                });
+            }
+        }
+    }(sx, sy));
+    
+    //console.log('search finished, iterations: ' + iter);
+    return cw;
+}
+
+
+function printConnectedWalls(cw, m) {
+    // Debug purposes: print object, returned by findConnectedWalls()
+
+    var x, xy, w = [], xx = m.length, yy = m[0].length;
+    for (x = 0; x < xx; x += 1) {
+        w[x] = [];
+        for (y = 0; y < yy; y += 1) {
+            w[x][y] = '.';
+        }
+    }
+    cw.forEach(function (str) {
+        xy = str.split('.');
+        w[xy[0]][xy[1]] = '#';
+    });
+    
+    printWalls(w);
+}
+
+function findRect(cw, m) {
+    // Coordinates of rectangle that covers connected walls, +1 on each side
+    // algorithm uses fact that cw array is filled by flooding, so the next segment is connected to one of the earlier added segments
+    // can do this inside of findConnectedWalls() loop
+    // fails if walls cover the whole map in at least one dimension, so there is an overlap
+    var xy = cw[0].split('.'), x = +xy[0], y = +xy[1], xx = m.length, yy = m[0].length;
+    var w = x, e = x, n = y, s = y;
+    cw.forEach(function (str) {
+        xy = str.split('.');
+        x = +xy[0];
+        y = +xy[1];
+        (x === (e + 1) % xx) && (e = x);
+        (w === (x + 1) % xx) && (w = x);
+        (y === (s + 1) % yy) && (s = y);
+        (n === (y + 1) % yy) && (n = y);
+    });
+    return {
+        n: (n - 1 + yy) % yy,
+        e: (e + 1) % xx,
+        s: (s + 1) % yy,
+        w: (w - 1 + xx) % xx
+        };
+}
+
+function findInterior(cw, m) {
+    // Finds interior enclosed by a given set of connected walls.
+    // Floods the outside, starting from a NW corner of rectangle around walls.
+    
+    var r = findRect(cw, m),
+        xx = m.length,
+        yy = m[0].length,
+        width = (r.e - r.w + xx) % xx + 1,
+        height = (r.s - r.n + yy) % yy + 1,
+        out, interior,
+        i, j, x, y, str,
+        iter = 0;
+        
+    if (cw.length < 8 || width < 5 || height < 5) {
+        return [];
+    }
+    
+    out = [];
+    for (i = 0; i < width; i += 1) {
+        out[i] = [];
+    }
+    
+    (function flood(i, j) {
+        iter += 1;
+        // skip if out of rectangle borders or already visited
+        if (i < 0 || j < 0 || i >= width || j >= height || out[i][j] === true) {
+            return;
+        }
+        x = (r.w + i) % xx;
+        y = (r.n + j) % yy;
+        str = x + '.' + y;
+        // mark and flood around if not a wall
+        if (cw.indexOf(str) === -1) {
+            out[i][j] = true;
+            flood(i, j - 1);
+            flood(i + 1, j);
+            flood(i, j + 1);
+            flood(i - 1, j);
+            flood(i - 1, j - 1);
+            flood(i + 1, j - 1);
+            flood(i + 1, j + 1);
+            flood(i - 1, j + 1);            
+        }
+    }(0, 0));
+    
+    //console.log('outer flood finished, iterations: ' + iter);
+    
+    interior = [];
+    for (i = 0; i < width; i += 1) {
+        for (j = 0; j < height; j += 1) {
+            x = (r.w + i) % xx;
+            y = (r.n + j) % yy;
+            str = x + '.' + y;
+            (out[i][j] !== true && map[x][y] !== '#') && interior.push(str);
+        }
+    }
+    return interior;
+}
+
+
+function findUnvisitedWall(m, w) {
+    // Finds wall on the map, that has not yet been added to walls grid.
+
+    var x, y;
+    for (x = 0; x < m.length; x += 1) {
+        for (y = 0; y < m[0].length; y += 1) {
+            if (m[x][y] === '#' && w[x][y] !== '#') {
+                return [x, y];
+            }
+        }
+    }
+    return;
+}
+
+
+function markEnclosure(s, m, w) {
+    // Mark walls and interior to the walls grid, beginning with wall at (s[0],s[1]).
+
+    var cw, interior, xy;
+    cw = findConnectedWalls(m, s[0], s[1]);
+    interior = findInterior(cw, m);
+    cw.forEach(function (str) {
+        xy = str.split('.');
+        w[xy[0]][xy[1]] = '#';
+    });
+    interior.forEach(function (str) {
+        xy = str.split('.');
+        w[xy[0]][xy[1]] = 'O';
+    });
+}
+
+function addWall(x, y, m, w) {
+    // Add a wall to the map at (x,y) and update relevant interiors.
+
+    if (w[x][y] === '#') {
+        console.log('add: # here');
+        return;
+    }
+    var t = Date.now();
+    m[x][y] = '#';
+    markEnclosure([x, y], m, w);
+    console.log('add:', Date.now() - t, 'ms');
+}
+
+function eraseInterior(sx, sy, m, w) {
+    // Erase interior starting from (sx,sy).
+    (function flood(x, y) {
+        if (w[x][y] === 'O') {
+            w[x][y] = '.';
+            coordinatesAround(m, x, y, true).forEach(function (xy) {
+                flood(xy[0], xy[1]);
+            });
+        }
+    }(sx, sy));
+}
+
+function removeWall(x, y, m, w) {
+    // Remove wall at (x,y) from the map and update interiors.
+    var hole, ins, nw;
+    if (w[x][y] !== '#') {
+        console.log('rem: no # here');
+        return;
+    }
+    var t = Date.now();
+    m[x][y] = '.';
+    
+    hole = false;
+    ins = [];
+    nw = 0;
+    coordinatesAround(m, x, y, true).forEach(function (xy) {
+        if (w[xy[0]][xy[1]] === '.') {
+            hole = true;
+        } else if (w[xy[0]][xy[1]] === 'O') {
+            ins.push(xy);
+        } else if (w[xy[0]][xy[1]] === '#') {
+            nw += 1;
+        }
+    });
+    
+    if (hole === false && (ins.length > 0 || nw > 0)) {
+        w[x][y] = 'O';
+    } else {
+        w[x][y] = '.';
+    }
+    
+    if (ins.length === 0 || hole === false) {
+        return;
+    }
+    
+    ins.forEach(function (xy) {
+        eraseInterior(xy[0], xy[1], m, w);
+    });
+    console.log('remove:', Date.now() - t, 'ms');
+}
+
+
+
+var canvas, ctx, map, walls, x, y, unvisited, xx, yy, cellSize, drag, prevX, prevY, prevBtn;
+
+xx = 100;
+yy = 60;
+cellSize = 15;
+drag = false;
+
+// initialize canvas
+canvas = document.getElementById('canvas');
+ctx = canvas.getContext('2d');
+canvas.width = xx * cellSize;
+canvas.height = yy * cellSize;
+
+map = genMap(xx, yy, 0.2);
+
+walls = [];
+for (x = 0; x < xx; x += 1) {
+    walls[x] = [];
+    for (y = 0; y < yy; y += 1) {
+        walls[x][y] = '.';
+    }
+}
+
+// mark initial walls and interiors
+while (typeof (unvisited = findUnvisitedWall(map, walls)) !== 'undefined') {
+    markEnclosure(unvisited, map, walls);
+}
+
+drawMap(walls);
+
+
+canvas.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+}, false);
+canvas.addEventListener('mousedown', function (e) {
+    drag = true;
+}, false);
+canvas.addEventListener('mouseup', function (e) {
+    drag = false;
+}, false);
+
+canvas.addEventListener('mousemove', function (e) {
+    // Add/remove walls as mouse moves over map with button held (left to add, right to remove)
+    // Also captures single clicks
+
+    var x, y;
+    if (drag === true) {
+        x = Math.floor((e.clientX - canvas.offsetLeft) / cellSize);
+        y = Math.floor((e.clientY - canvas.offsetTop) / cellSize);
+        if (x !== prevX || y !== prevY || e.button !== prevBtn) {
+            if (e.button === 0) {
+                addWall(x, y, map, walls);
+            } else if (e.button === 2) {
+                removeWall(x, y, map, walls);
+            }
+            prevX = x;
+            prevY = y;
+            prevBtn = e.button;
+        }
+    }
+    drawMap(walls);
+}, false);
+
+
+</script>
+</body>
+</html>
