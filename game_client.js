@@ -115,6 +115,10 @@ window.addEventListener('load', function clientLoader() {
             craft: {
                 tab: document.getElementById('tabCraft'),
                 panel: document.getElementById('panelCraft')
+            },
+            settings: {
+                tab: document.getElementById('tabSettings'),
+                panel: document.getElementById('panelSettings')
             }
         },
         crafts: document.getElementById('crafts'),
@@ -294,6 +298,20 @@ window.addEventListener('load', function clientLoader() {
         div.crafts.appendChild(liCraft);
     });
 
+    // -------------------------
+    // Settings tab
+    // -------------------------
+    ui.settings = {
+        sounds: document.getElementById('setSounds').checked,
+        interior: document.getElementById('setInterior').checked
+    };
+    document.getElementById('setSounds').addEventListener('change', function () {
+        ui.settings.sounds = document.getElementById('setSounds').checked;
+    });
+    document.getElementById('setInterior').addEventListener('change', function () {
+        ui.settings.interior = document.getElementById('setInterior').checked;
+    });
+
     // --------------------------
     // Bag on the ground
     // --------------------------
@@ -471,21 +489,12 @@ window.addEventListener('load', function clientLoader() {
     }, false);
 
     // -------------------------
-    // Settings
-    // -------------------------
-    ui.settings = {
-        mute: true
-    };
-
-
-
-    // -------------------------
     // Audio
     // -------------------------
     var sounds = {
         hit: new Audio('public/hit.mp3'),
         play: function (snd) {
-            if (!ui.settings.mute) {
+            if (ui.settings.sounds === true) {
                 snd.play();
             }
         }
@@ -656,7 +665,7 @@ window.addEventListener('load', function clientLoader() {
             });
             sprite = new PIXI.Graphics();
             sprite.beginFill(0xFF0000, 0.5);
-            sprite.drawRect(20 + i * base.constants.tile.width, 20 + j * base.constants.tile.height, 3, 3);
+            sprite.drawRect(25 + i * base.constants.tile.width, 25 + j * base.constants.tile.height, 5, 5);
             stage.addChild(sprite);
             sprites[i][j].mark = sprite;
         }
@@ -711,7 +720,7 @@ window.addEventListener('load', function clientLoader() {
 
 
                 // enclosure marks
-                sprites[i][j].mark.visible = (cell.enclosure === true);
+                sprites[i][j].mark.visible = (ui.settings.interior === true && cell.interior === true);
             }
         }
     }

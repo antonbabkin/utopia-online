@@ -46,14 +46,21 @@ function utilsClosure() {
         });
     };
 
-    // coordinates of 4 tiles around the given coordinates
-    utils.coordsAround = function (coords) {
-        return {
+    // coordinates of 4 tiles around the given coordinates (8 tiles if diag===true)
+    utils.coordsAround = function (coords, diag) {
+        var result = {
             n: utils.coordsOffset(coords, 0, -1),
             e: utils.coordsOffset(coords, 1, 0),
             s: utils.coordsOffset(coords, 0, 1),
             w: utils.coordsOffset(coords, -1, 0)
         };
+        if (diag === true) {
+            result.ne = utils.coordsOffset(coords, 1, -1);
+            result.se = utils.coordsOffset(coords, 1, 1);
+            result.sw = utils.coordsOffset(coords, -1, 1);
+            result.nw = utils.coordsOffset(coords, -1, -1);
+        }
+        return result;
     };
 
     // vector from point A to point B

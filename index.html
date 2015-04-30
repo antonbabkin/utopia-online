@@ -41,7 +41,7 @@
             div.tab {
                 position: absolute;
                 top: 0;
-                width: 56px;
+                width: 44px;
                 height: 36px;
                 border: 2px darkgray solid;
                 text-align: center;
@@ -151,14 +151,17 @@
             <div id="tabInv" class="tab" style="left: 0; border-color: coral;">
                 <img src="public/bag.png">
             </div>
-            <div id="tabEquips" class="tab" style="left: 60px;">
+            <div id="tabEquips" class="tab" style="left: 48px;">
                 <img src="public/hero.png">
             </div>
-            <div id="tabStats" class="tab" style="left: 120px;">
+            <div id="tabStats" class="tab" style="left: 96px;">
                 <img src="public/stats.png">
             </div>
-            <div id="tabCraft" class="tab" style="left: 180px;">
+            <div id="tabCraft" class="tab" style="left: 144px;">
                 <img src="public/hammer.png">
+            </div>
+            <div id="tabSettings" class="tab" style="left: 192px;">
+                <img src="public/wrench.png">
             </div>
             <div id="panelInv" class="tabPanel" style="z-index: 1;">
                 <table style="margin: auto;">
@@ -216,6 +219,10 @@
                 <ul id="crafts" style="list-style-type: none; margin: 0; padding: 0 20px 0 20px;">
                 </ul>
 
+            </div>
+            <div id="panelSettings" class="tabPanel">
+                <p>Sounds<input type="checkbox" id="setSounds"></p>
+                <p>Interior<input type="checkbox" id="setInterior" checked></p>
             </div>
             <div id="groundPanel">
                 <table style="margin: auto;">

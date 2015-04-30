@@ -13,7 +13,8 @@ function gameServer(io) {
     let base = require('./db.js');
     let utils = require('./utils.js');
     let playersData = {}; // players' data stored by name, available while server is running
-    let privateObjects = {}; // map objects that are tied to particular players
+    let privateObjects = {}, // map objects that are tied to particular players
+        walls; // object for enclosure detection mechanics
 
     // Augment utils with server-only functions
     utils.grid = {
@@ -39,296 +40,6 @@ function gameServer(io) {
                 cells[dir] = grid[cells[dir].x][cells[dir].y];
             });
             return cells;
-        },
-        isWall: function(cell) {
-            if (typeof cell.object === 'undefined') {
-                return false;
-            } else {
-                return !base.constants.wallBids.every(function (bid) {
-                    return cell.object !== bid;
-                });
-            }
-        },
-        markHome: function (start) {
-            // check if territory around start is enclosed by rectangular shaped wall
-            // if it is, mark all interior sells as home
-            // now only rectangular shape and only within viewport
-            // todo: add claiming item, erase claimed area if one of the walls falls
-
-            let walls = {};
-
-
-            // find walls around start
-            function findWall(dx, dy) {
-                // find wall in the direction of vector dx, dy
-                // one of directions must be = 0, another 1 or -1
-                let xy = start;
-                for (let i = 1; i < 8; i += 1) {
-                    xy = utils.coordsOffset(xy, dx, dy);
-                    if (utils.grid.isWall(grid[xy.x][xy.y])) {
-                        if (dy === 0) {
-                            return xy.x;
-                        } else {
-                            return xy.y;
-                        }
-                    }
-                }
-                return false;
-            }
-
-            walls.n = findWall(0, -1);
-            walls.e = findWall(1, 0);
-            walls.s = findWall(0, 1);
-            walls.w = findWall(-1, 0);
-
-            let hasWallsAroundStart = ['n', 'e', 's', 'w'].every(function (dir) {
-                return walls[dir] !== false;
-            });
-
-            if (!hasWallsAroundStart) {
-                return false;
-            }
-
-            // check if all 4 walls are solid
-            let xy = {x: walls.w, y: walls.n};
-            while (true) {
-                // north and south walls
-                if (!utils.grid.isWall(grid[xy.x][walls.n]) || !utils.grid.isWall(grid[xy.x][walls.s])) {
-                    return false;
-                }
-                if (xy.x === walls.e) {
-                    break;
-                }
-                xy = utils.coordsOffset(xy, 1, 0);
-            }
-            xy = utils.coordsOffset({x: walls.w, y: walls.n}, 0, 1);
-            while (true) {
-                // west and east walls
-                if (!utils.grid.isWall(grid[walls.w][xy.y]) || !utils.grid.isWall(grid[walls.e][xy.y])) {
-                    return false;
-                }
-                if (xy.y === walls.s) {
-                    break;
-                }
-                xy = utils.coordsOffset(xy, 0, 1);
-            }
-
-            // all good: claim territory
-            let diag = utils.vector(
-                {x: walls.w, y: walls.n},
-                {x: walls.e, y: walls.s}
-            );
-
-            let nw = {x: walls.w, y: walls.n};
-            for (let x = 0; x <= diag.x; x += 1) {
-                for (let y = 0; y <= diag.y; y +=1) {
-                    xy = utils.coordsOffset(nw, x, y);
-                    grid[xy.x][xy.y].home = true;
-                }
-            }
-            return true;
-        },
-        eraseHome: function (start) {
-            // erase all home cells starting from @start
-            delete grid[start.x][start.y].home;
-            (function eraseNeighbors(cell) {
-                let neighbors = utils.coordsAround(cell),
-                    neighbor;
-                ['n', 'e', 's', 'w'].forEach(function (dir) {
-                    neighbor = neighbors[dir];
-                    if (grid[neighbor.x][neighbor.y].home === true) {
-                        delete grid[neighbor.x][neighbor.y].home;
-                        eraseNeighbors(neighbor);
-                    }
-                });
-            }(start));
-        },
-        addWall: function (xy) {
-            if (grid[xy.x][xy.y].enclosure !== true) {
-                utils.grid.markEnclosure(xy, true);
-            }
-        },
-        removeWall: function (xy) {
-            if (grid[xy.x][xy.y].enclosure !== true) {
-                return;
-            }
-
-            let neighbors = utils.coordsAround(xy),
-                neighbor;
-            if (!neighbors.every(function (dir) {
-                    neighbor = neighbors[dir];
-                    return (grid[neighbor.x][neighbor.y].enclosure === true);
-                })) {
-                // cell is on the edge of enclosure
-                delete grid[xy.x][xy.y].enclosure;
-
-                neighbors.forEach(function (dir) {
-                    neighbor = neighbors[dir];
-                    if (grid[neighbor.x][neighbor.y].enclosure === true && utils.grid.isWall(grid[neighbor.x][neighbor.y])) {
-                        utils.grid.markEnclosure(neighbor, false);
-                    }
-                });
-            }
-        },
-        markEnclosure: function (start, add) {
-            // Detects and marks "inside" cells of the grid, including walls
-            // Start cell must be a wall
-            // This function should be called on empty cell if that cell was known to be a part of enclosure
-            // @start = {x, y} - cell to start search from
-            // @add - add (true) or remove (false) enclosure
-            function isWall(xy) {
-                if (typeof grid[xy.x][xy.y].object === 'undefined') {
-                    return false;
-                } else {
-                    return !base.constants.wallBids.every(function (bid) {
-                        return grid[xy.x][xy.y].object !== bid;
-                    });
-                }
-            }
-
-            function xyStrToObj(xyStr) {
-                let xyArr = xyStr.split('.');
-                return {x: +xyArr[0], y: +xyArr[1]};
-            }
-
-            function xyObjToStr(xyObj) {
-                return xyObj.x + '.' + xyObj.y;
-            }
-
-            // Find all walls connected with start
-            let connectedWalls = [xyObjToStr(start)],
-                nw = {x: start.x, y: start.y},
-                se = {x: start.x, y: start.y}; // grid borders of a minimal rectangle that encompasses all walls
-            (function addNeighborWalls(xy) {
-                // todo: this does not work, with 4+ connected walls it is "RangeError: Maximum call stack size exceeded"
-                let neighbors = utils.coordsAround(xy),
-                    neighbor,
-                    xyStr;
-                ['n', 'e', 's', 'w'].forEach(function (dir) {
-                    neighbor = neighbors[dir];
-                    xyStr = xyObjToStr(neighbor);
-                    if (isWall(neighbor) && connectedWalls.indexOf(xyStr) === -1) {
-                        // if it is a wall and not in the list yet, then add and continue adding from it recursively
-                        connectedWalls.push(xyStr);
-                        console.log(connectedWalls);
-                        switch (dir) {
-                        case 'n':
-                            nw.y = neighbor.y;
-                            break;
-                        case 'e':
-                            se.x = neighbor.x;
-                            break;
-                        case 's':
-                            se.y = neighbor.y;
-                            break;
-                        case 'w':
-                            nw.x = neighbor.x;
-                            break;
-                        }
-                        addNeighborWalls(neighbor);
-                    }
-                });
-            }(start));
-
-            if (connectedWalls.length === 0) {
-                return;
-            }
-
-            nw = utils.coordsOffset(nw, -1, -1);
-            se = utils.coordsOffset(se, 1, 1);
-
-            let frameSize = utils.vector(nw, se);
-            frameSize.x += 1;
-            frameSize.y += 1;
-            console.log(nw, se, frameSize);
-            if (frameSize.x < 5 || frameSize.y < 5) {
-                return;
-                // frame not big enough for any enclosure
-            }
-
-
-
-            // "draw" rectangle around walls
-            // flood it starting from outside
-            // then check if there are any non-flooded non-wall cells inside
-            // if yes, then they are enclosed
-            let frame = [];
-            for (let i = 0; i < frameSize.x; i += 1) {
-                frame[i] = [];
-            }
-            (function flood(ij) {
-                if (ij.i < 0 || ij.j < 0 || ij.i >= frameSize.x || ij.j >= frameSize.y) {
-                    return;
-                }
-                console.log(ij);
-                frame[ij.i][ij.j] = true; // flood this cell if flood search got here: outer walls are flooded too
-                let xy = utils.wrapOverWorld({x: nw.x + ij.i, y: nw.y + ij.j});
-                if (connectedWalls.indexOf(xyObjToStr(xy)) === -1) {
-                    // not a wall: keep searching around
-                    flood({i: ij.i - 1, j: ij.j});
-                    flood({i: ij.i + 1, j: ij.j});
-                    flood({i: ij.i, j: ij.j - 1});
-                    flood({i: ij.i, j: ij.j + 1});
-                }
-            }({i: 0, j: 0}));
-
-            // debug: print frame in console
-            console.log('Frame around walls');
-            for (let j = 0; j < frameSize.y; j += 1) {
-                let str = '',
-                    xy;
-                for (let i = 0; i < frameSize.x; i += 1) {
-                    if (frame[i][j] === true) {
-                        xy = utils.wrapOverWorld({x: nw.x + i, y: nw.y + j});
-                        if (connectedWalls.indexOf(xyObjToStr(xy)) === -1) {
-                            str += '_';
-                        } else {
-                            str += 'O';
-                        }
-                    } else {
-                        str += '.';
-                    }
-                }
-                console.log(str);
-            }
-
-            let allFlooded = frame.every(function (col) {
-                return col.every(function (cell) {
-                    return cell === true;
-                });
-            });
-
-            if (!add && allFlooded) {
-               // everything flooded: clear enclosure marks
-               (function clear(cell) {
-                   delete grid[cell.x][cell.y].enclosure;
-                   let neighbors = utils.coordsAround(cell),
-                       neighbor;
-                   ['n', 'e', 's', 'w'].forEach(function (dir) {
-                       neighbor = neighbors[dir];
-                       if (grid[neighbor.x][neighbor.y].enclosure === true) {
-                           clear(neighbor);
-                       }
-                   });
-               }(start));
-           } else if (add && !allFlooded) {
-                // enclosure found: mark
-                let xy;
-                connectedWalls.forEach(function (xyStr) {
-                    xy = xyStrToObj(xyStr);
-                    grid[xy.x][xy.y].enclosure = true;
-                });
-
-                frame.forEach(function (col, i) {
-                    col.forEach(function (cell, j) {
-                        if (cell === true) {
-                            return;
-                        }
-                        xy = utils.wrapOverWorld({x: nw.x + i, y: nw.y + j});
-                        grid[xy.x][xy.y].enclosure = true;
-                    });
-                });
-            }
         }
     };
 
@@ -405,11 +116,9 @@ function gameServer(io) {
                         privateObjects[player.x + '.' + player.y] = player.name;
                     }
 
-                    // check enclosure when building walls
-                    if (!base.constants.wallBids.every(function (bid) {
-                            return objectId !== bid;
-                        })) {
-                        utils.grid.addWall({x: player.x, y: player.y});
+                    // Update walls and check for new interiors when building walls
+                    if (walls.isWall(grid[player.x][player.y])) {
+                        walls.addWall({x: player.x, y: player.y});
                     }
                 });
             } else if (typeof item.heals !== 'undefined') {
@@ -417,14 +126,6 @@ function gameServer(io) {
                 stats.hp = Math.min(stats.maxHp, stats.hp + item.heals);
                 player.emit('stats', stats);
                 utils.inventory.removeItem(player, itemBid);
-            } else if (item.name === 'Home claim') {
-                if (utils.grid.markHome(player)) {
-                    player.emit('msg', 'Claim successful');
-                    utils.inventory.removeItem(player, itemBid);
-                    //todo: updateInHome()
-                } else {
-                    player.emit('msg', 'Claim failed');
-                }
             } else if (item.type === 'ground') {
                 utils.inventory.removeItem(player, itemBid);
                 player.delayedAction(function () {
@@ -618,6 +319,265 @@ function gameServer(io) {
         }
     };
 
+    // Create object with clojure for enclosure detection mechanics
+    walls = (function wallsClojure() {
+        const wNone = 0,
+            wUnvisited = 1,
+            wVisited = 2;
+        let wGrid, // grid for detected walls
+            xx, yy, // grid dimensions
+            x, y; // temporary index variables
+
+        function isWall(cell) {
+            if (typeof cell.object === 'undefined') {
+                return false;
+            } else {
+                return !base.constants.wallBids.every(function (bid) {
+                    return cell.object !== bid;
+                });
+            }
+        }
+
+        function findConnectedWalls(sxy) {
+            // Start at sxy and flood all walls connected on 4 sides (no diagonals)
+            // Returns array of coordinate strings of form "x.y"
+            // Array will be empty if sxy is not a wall
+            let cw;
+            cw = [];
+            (function flood(xy) {
+                if (wGrid[xy.x][xy.y] !== wNone) {
+                    let str;
+                    str = xy.x + '.' + xy.y;
+                    if (cw.indexOf(str) === -1) {
+                        let around;
+                        cw.push(str);
+                        around = utils.coordsAround(xy);
+                        Object.keys(around).forEach(function (dir) {
+                            flood(around[dir]);
+                        });
+                    }
+                }
+            }(sxy));
+            return cw;
+        }
+
+
+        function findRect(cw) {
+            // Coordinates of rectangle that covers connected walls, +1 on each side
+            // Algorithm uses fact that cw array is filled by flooding, so the next segment is connected to one of the earlier added segments
+            // Can do this inside of findConnectedWalls() loop, to save time maybe
+            // Fails if walls cover the whole map in at least one dimension, so there is an overlap
+            let xy, x, y, n, e, s, w;
+            xy = cw[0].split('.');
+            x = +xy[0];
+            y = +xy[1];
+            w = x;
+            e = x;
+            n = y;
+            s = y;
+            cw.forEach(function (str, i) {
+                if (i === 0) {
+                    return;
+                }
+                xy = str.split('.');
+                x = +xy[0];
+                y = +xy[1];
+                if (x === (e + 1) % xx) {
+                    e = x;
+                } else if (w === (x + 1) % xx) {
+                    w = x;
+                } else if (y === (s + 1) % yy) {
+                    s = y;
+                } else if (n === (y + 1) % yy) {
+                    n = y;
+                }
+            });
+            return {
+                n: (n - 1 + yy) % yy,
+                e: (e + 1) % xx,
+                s: (s + 1) % yy,
+                w: (w - 1 + xx) % xx
+            };
+        }
+
+        function findInterior(cw, m) {
+            // Finds interior enclosed by a given set of connected walls.
+            // Floods the outside, starting from a NW corner of rectangle around walls.
+            // Returns array of interior coordinates of format {x,y} or empty array if no interior detected.
+
+            let r = findRect(cw, m),
+                width = (r.e - r.w + xx) % xx + 1,
+                height = (r.s - r.n + yy) % yy + 1,
+                out, interior,
+                i, j, x, y, str;
+
+            if (cw.length < 8 || width < 5 || height < 5) {
+                return [];
+            }
+
+            out = [];
+            for (i = 0; i < width; i += 1) {
+                out[i] = [];
+            }
+
+            (function flood(i, j) {
+                // skip if out of rectangle borders or already visited
+                if (i < 0 || j < 0 || i >= width || j >= height || out[i][j] === true) {
+                    return;
+                }
+                x = (r.w + i) % xx;
+                y = (r.n + j) % yy;
+                str = x + '.' + y;
+                // mark and flood around if not a wall
+                if (cw.indexOf(str) === -1) {
+                    out[i][j] = true;
+                    flood(i, j - 1);
+                    flood(i + 1, j);
+                    flood(i, j + 1);
+                    flood(i - 1, j);
+                    flood(i - 1, j - 1);
+                    flood(i + 1, j - 1);
+                    flood(i + 1, j + 1);
+                    flood(i - 1, j + 1);
+                }
+            }(0, 0));
+
+
+            interior = [];
+            for (i = 0; i < width; i += 1) {
+                for (j = 0; j < height; j += 1) {
+                    x = (r.w + i) % xx;
+                    y = (r.n + j) % yy;
+                    if (out[i][j] !== true && wGrid[x][y] === wNone){
+                        interior.push({x: x, y: y});
+                    }
+                }
+            }
+            return interior;
+        }
+
+        function findUnvisitedWall() {
+            // Finds wall that has not yet been checked for enclosure
+            // Return {x, y} coordinates of that wall or undefined if all walls have already been checked
+            let x, y;
+            for (x = 0; x < xx; x += 1) {
+                for (y = 0; y < yy; y += 1) {
+                    if (wGrid[x][y] === wUnvisited) {
+                        return {x: x, y: y};
+                    }
+                }
+            }
+            return;
+        }
+
+        function markEnclosure(s) {
+            // Mark walls as checked on wGrid and mark interior on grid, beginning with wall at s.
+            let cw = findConnectedWalls(s);
+            cw.forEach(function (str) {
+                let xy = str.split('.');
+                wGrid[xy[0]][xy[1]] = wVisited;
+            });
+            findInterior(cw).forEach(function (xy) {
+                grid[xy.x][xy.y].interior = true;
+            });
+        }
+
+        function addWall(xy) {
+            // Add a wall to the wGrid at xy and check for new interiors.
+            // This can potentially be more efficient without re-visiting previously detected walls.
+            if (grid[xy.x][xy.y].interior === true) {
+                delete grid[xy.x][xy.y].interior;
+            }
+            wGrid[xy.x][xy.y] = wUnvisited;
+            markEnclosure(xy);
+        }
+
+        function eraseInterior(s) {
+            // Erase connected interior starting from s.
+            // Connection can be diagonal as well.
+            (function flood(xy) {
+                if (grid[xy.x][xy.y].interior === true) {
+                    delete grid[xy.x][xy.y].interior;
+                    let around = utils.coordsAround(xy, true);
+                    Object.keys(around).forEach(function (dir) {
+                        flood(around[dir]);
+                    });
+                }
+            }(s));
+        }
+
+        function removeWall(xy) {
+            // Remove wall at xy from the wGrid and erase any broken interiors.
+            let hole, ins, wCount, around;
+            hole = false;
+            ins = [];
+            wCount = 0;
+            around = utils.coordsAround(xy, true);
+            Object.keys(around).forEach(function (dir) {
+                let xy = around[dir];
+                if (wGrid[xy.x][xy.y] === wNone) {
+                    if (grid[xy.x][xy.y].interior === true) {
+                        ins.push(xy);
+                    } else {
+                        hole = true;
+                    }
+                } else {
+                    wCount += 1;
+                }
+            });
+
+            wGrid[xy.x][xy.y] = wNone;
+
+            // No hole and connected interior -> new interior
+            // 8 walls around removed wall -> new interior inside.
+            if ((hole === false && ins.length > 0) || wCount === 8) {
+                grid[xy.x][xy.y].interior = true;
+            }
+
+            if (hole === true && ins.length > 0) {
+                ins.forEach(function (xy) {
+                    eraseInterior(xy);
+                });
+            }
+        }
+
+
+
+        function readGrid() {
+            let unvisited;
+
+            // Initialization of private properties of walls object
+            xx = grid.length;
+            yy = grid[0].length;
+            wGrid = [];
+
+            // First pass: mark wall cells as 1, and non-wall cells as 0
+            grid.forEach(function (column, x) {
+                wGrid[x] = [];
+                column.forEach(function (cell, y) {
+                    wGrid[x][y] = (isWall(cell) ? wUnvisited : wNone);
+                });
+            });
+
+            // Second pass: check walls for enclosures and mark visited walls with 2
+            while (typeof (unvisited = findUnvisitedWall()) !== 'undefined') {
+                markEnclosure(unvisited);
+            }
+        }
+
+
+
+
+        // Return public properties of walls object
+        return {
+            isWall: isWall,
+            readGrid: readGrid,
+            addWall: addWall,
+            removeWall: removeWall
+        };
+    }());
+
+
     // grid of map coordinates that works as a reference to all objects, players, mobs, bags and grounds
     // coordinates are of form grid[x][y], i.e. (column, row)
     let grid = [];
@@ -706,11 +666,11 @@ function gameServer(io) {
                             items: map.grid[x][y][2]
                         });
                     }
-                    if (map.grid[x][y].h === true) {
-                        grid[x][y].home = true;
-                    }
                 }
             }
+
+            // Detect all walls and interiors.
+            walls.readGrid();
 
             privateObjects = map.privateObjects;
 
@@ -752,9 +712,6 @@ function gameServer(io) {
                 }
                 if (typeof cell.bag !== 'undefined') {
                     map.grid[x][y].b = cell.bag.items;
-                }
-                if (cell.h === true) {
-                    map.grid[x][y].h = true;
                 }
             });
         });
@@ -803,13 +760,8 @@ function gameServer(io) {
                             cell.object = object.change.bid;
                         } else {
                             // object dies
-                            if (cell.home === true && utils.grid.isWall(cell)) {
-                                utils.grid.eraseHome({x: x, y: y});
-                                // todo: also should do updateInHome() for all relevant players
-                            }
-
-                            if (utils.grid.isWall(cell)) {
-                                utils.grid.removeWall({x: x, y: y});
+                            if (walls.isWall(cell)) {
+                                walls.removeWall({x: x, y: y});
                                 // todo: also should do updateInHome() for all relevant players
                             }
 
@@ -1085,7 +1037,6 @@ function gameServer(io) {
         function renewTimer() {
             clearTimeout(lifetimeTimer);
             lifetimeTimer = setTimeout(lifetime, base.constants.bagLifetime);
-            console.log('renew bag timer at  ', bag.x, bag.y); // debug quick death of bag when chest is destroyed
         }
 
         function getItem(itemNumber) {
@@ -1142,7 +1093,7 @@ function gameServer(io) {
                     });
                 }
             });
-            if (player.inHome) {
+            if (player.inside) {
                 stats.bonus.crafting += 100;
             }
             base.constants.stats.forEach(function (stat) {
@@ -1184,7 +1135,7 @@ function gameServer(io) {
                     viewport[x1 - xl][y1 - yl] = grid[xy.x][xy.y];
                 }
             }
-            updateInHome();
+            updateInsideStatus();
         }
 
         function delay() {
@@ -1244,10 +1195,10 @@ function gameServer(io) {
             emitViewportTimer = setTimeout(emitViewportLoop, base.constants.playerUpdateTime);
         }
 
-        function updateInHome() {
-            let homeCell = (grid[player.x][player.y].home === true);
-            if (player.inHome !== homeCell) {
-                player.inHome = homeCell;
+        function updateInsideStatus() {
+            let inside = (grid[player.x][player.y].interior === true);
+            if (player.inside !== inside) {
+                player.inside = inside;
                 updateStats();
             }
         }
@@ -1317,7 +1268,7 @@ function gameServer(io) {
         emit('login', {success: true, name: player.name});
         emit('inventory', inventory);
         emit('equipment', equipment);
-        updateViewport(); // will also call updateInHome(), create .inHome property, updateStats() and emit 'stats'
+        updateViewport(); // will also call updateInsideStatus(), create .inHome property, updateStats() and emit 'stats'
         emitViewportLoop(); // start update loop
 
         console.log('Player connected: ' + player.name);
@@ -1337,6 +1288,15 @@ function gameServer(io) {
                 x: player.x,
                 y: player.y
             };
+
+            function checkWallBreak() {
+                // Do this for picking up "soft" walls (facility), breaking hardened walls (structure) and doors (private)
+                if (walls.isWall(grid[newPos.x][newPos.y])) {
+                    walls.removeWall(newPos);
+                    // todo: updateInsideStatus() for all relevant players
+                }
+            }
+
 
             switch (dir) {
             case 'e':
@@ -1370,10 +1330,7 @@ function gameServer(io) {
                     if (!utils.inventory.full(player)) {
                         delayedAction(function () {
                             utils.inventory.addItem(player, base.itemId[object.name]);
-                            if (grid[newPos.x][newPos.y].home === true && utils.grid.isWall(grid[newPos.x][newPos.y])) {
-                                utils.grid.eraseHome(newPos);
-                                updateInHome();
-                            }
+                            checkWallBreak();
                             delete grid[newPos.x][newPos.y].object;
                         });
                     }
@@ -1382,16 +1339,7 @@ function gameServer(io) {
                     emit('msg', 'You hit ' + object.name);
                     delay();
                     if (Math.random() > object.durability) {
-                        if (grid[newPos.x][newPos.y].home === true && utils.grid.isWall(grid[newPos.x][newPos.y])) {
-                            utils.grid.eraseHome(newPos);
-                            updateInHome();
-                        }
-
-                        if (utils.grid.isWall(grid[newPos.x][newPos.y])) {
-                            utils.grid.removeWall({x: x, y: y});
-                            updateInHome();
-                        }
-
+                        checkWallBreak();
                         delete grid[newPos.x][newPos.y].object;
                     }
                 } else if (object.type === 'private') {
@@ -1404,20 +1352,10 @@ function gameServer(io) {
                         emit('msg', 'You hit ' + privateObjects[newPos.x + '.' + newPos.y] + '\'s ' + object.name);
                         delay();
                         if (Math.random() > object.durability) {
-                            if (grid[newPos.x][newPos.y].home === true && utils.grid.isWall(grid[newPos.x][newPos.y])) {
-                                utils.grid.eraseHome(newPos);
-                                updateInHome();
-                            }
-
-                            if (utils.grid.isWall(grid[newPos.x][newPos.y])) {
-                                utils.grid.removeWall({x: x, y: y});
-                                updateInHome();
-                            }
-
+                            checkWallBreak();
                             if (object.name === 'Chest' && typeof grid[newPos.x][newPos.y].bag !== 'undefined') {
                                 grid[newPos.x][newPos.y].bag.renewTimer();
                             }
-
                             delete grid[newPos.x][newPos.y].object;
                         }
                     }
