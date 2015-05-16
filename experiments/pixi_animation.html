@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Utopia Online - pixi.js animations</title>
+
+</head>
+<body>
+    <script src="../pixi.dev.js"></script>
+<script>
+/*
+This is a playground for pixi.js experiments.
+First experiment - frame animations.
+*/
+
+'use strict';
+
+var stage, renderer, graphics, frames, animation, spr;
+
+stage = new PIXI.Stage(0xc8f040);
+renderer = PIXI.autoDetectRenderer(800, 600);
+document.body.appendChild(renderer.view);
+
+graphics = new PIXI.Graphics();
+graphics.lineStyle(2, 0x0000FF, 1);
+graphics.beginFill(0xFF700B, 1);
+graphics.drawRect(50, 250, 120, 120);
+stage.addChild(graphics);
+
+frames = [
+    PIXI.Texture.fromImage('sphere.png'),
+    PIXI.Texture.fromImage('angry_sphere.png')
+];
+animation = new PIXI.MovieClip(frames);
+animation.x = 100;
+animation.y = 100;
+animation.animationSpeed = 0.1;
+animation.play();
+stage.addChild(animation);
+
+
+spr = new PIXI.Sprite(frames[0]);
+spr.x = 200;
+spr.y = 200;
+stage.addChild(spr);
+
+
+(function animate() {
+    graphics.x += 0.1;
+    renderer.render(stage);
+    window.requestAnimationFrame(animate);
+}());
+
+
+</script>
+</body>
+</html>

@@ -303,13 +303,18 @@ window.addEventListener('load', function clientLoader() {
     // -------------------------
     ui.settings = {
         sounds: document.getElementById('setSounds').checked,
-        interior: document.getElementById('setInterior').checked
+        interior: document.getElementById('setInterior').checked,
+        aggressive: document.getElementById('setAggressive').checked
     };
     document.getElementById('setSounds').addEventListener('change', function () {
         ui.settings.sounds = document.getElementById('setSounds').checked;
     });
     document.getElementById('setInterior').addEventListener('change', function () {
         ui.settings.interior = document.getElementById('setInterior').checked;
+    });
+    document.getElementById('setAggressive').addEventListener('change', function () {
+        ui.settings.aggressive = document.getElementById('setAggressive').checked;
+        socket.emit('agro', ui.settings.aggressive);
     });
 
     // --------------------------

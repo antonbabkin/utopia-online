@@ -89,8 +89,8 @@ function afterParse() {
 
 db.constants = {
     world: { // World size in tiles
-        width: 40,
-        height: 40
+        width: 20,
+        height: 20
     },
     viewport: { // visible part of the map, size in tiles
         width: 15,
@@ -101,7 +101,7 @@ db.constants = {
         heightP: 15 * 32
     },
     actionDelay: 1000,
-    mobLimit: 16,
+    mobLimit: 0,
     bagLifetime: 60 * 1000,
     playerUpdateTime: 125,
     serverSaveTime: 50 * 60 * 1000,
@@ -121,6 +121,8 @@ db.constants = {
         'fighting'
     ]
 };
+
+db.constants.mobLimit = Math.floor(db.constants.world.width * db.constants.world.height / 100);
 
 lookupList.forEach(function (section) {
     db[section] = {};

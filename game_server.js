@@ -1068,6 +1068,7 @@ function gameServer(io) {
             inventory,
             equipment,
             stats,
+            aggressive,
             actionDelay,
             onDelay,
             delayTimer,
@@ -1249,6 +1250,8 @@ function gameServer(io) {
             stats = p.stats;
         }
 
+        aggressive = false;
+
         player.name = name;
         player.type = 'player';
         player.id = socket.id;
@@ -1297,6 +1300,16 @@ function gameServer(io) {
                 }
             }
 
+            function pickupObject(object) {
+                if (!utils.inventory.full(player)) {
+                    delayedAction(function () {
+                        utils.inventory.addItem(player, base.itemId[object.name]);
+                        checkWallBreak();
+                        delete grid[newPos.x][newPos.y].object;
+                    });
+                }
+            }
+
 
             switch (dir) {
             case 'e':
@@ -1320,22 +1333,20 @@ function gameServer(io) {
 
             if (typeof other !== 'undefined') {
                 // attack if there is another char at destination
-                utils.combat.hit(player, other);
-                delay()
+                // always attack NPCs, only attack players in aggressive mode
+                if (other.type === 'mob' || aggressive === true) {
+                    utils.combat.hit(player, other);
+                    delay();
+                }
             } else if (typeof objectBid === 'number') {
                 let object = base.objects[objectBid];
                 // interact if there is object at destination
-                if (object.type === 'facility') {
-                    // facilities are picked up
-                    if (!utils.inventory.full(player)) {
-                        delayedAction(function () {
-                            utils.inventory.addItem(player, base.itemId[object.name]);
-                            checkWallBreak();
-                            delete grid[newPos.x][newPos.y].object;
-                        });
-                    }
-                } else if (object.type === 'structure') {
-                    // structures are attacked and destroyed on success
+                if (object.type === 'facility' && aggressive === true) {
+                    // facilities are picked up in aggressive mode, nothing happens otherwise
+                    pickupObject(object);
+                } else if (object.type === 'structure' && aggressive === true) {
+                    // structures are attacked in aggressive mode and destroyed on success
+                    // nothing happens if not aggressive
                     emit('msg', 'You hit ' + object.name);
                     delay();
                     if (Math.random() > object.durability) {
@@ -1343,20 +1354,27 @@ function gameServer(io) {
                         delete grid[newPos.x][newPos.y].object;
                     }
                 } else if (object.type === 'private') {
-                    // owner of the structure can walk through, other try to break
+                    // not aggressive: owner walks through, nothing happens for others
+                    // aggressive: owner picks up object, others try to break it
                     if (privateObjects[newPos.x + '.' + newPos.y] === player.name) {
-                        moveOnGrid(player, newPos);
-                        updateViewport();
-                        delay();
+                        if (aggressive === true) {
+                            pickupObject(object);
+                        } else {
+                            moveOnGrid(player, newPos);
+                            updateViewport();
+                            delay();
+                        }
                     } else {
-                        emit('msg', 'You hit ' + privateObjects[newPos.x + '.' + newPos.y] + '\'s ' + object.name);
-                        delay();
-                        if (Math.random() > object.durability) {
-                            checkWallBreak();
-                            if (object.name === 'Chest' && typeof grid[newPos.x][newPos.y].bag !== 'undefined') {
-                                grid[newPos.x][newPos.y].bag.renewTimer();
+                        if (aggressive === true) {
+                            emit('msg', 'You hit ' + privateObjects[newPos.x + '.' + newPos.y] + '\'s ' + object.name);
+                            delay();
+                            if (Math.random() > object.durability) {
+                                checkWallBreak();
+                                if (object.name === 'Chest' && typeof grid[newPos.x][newPos.y].bag !== 'undefined') {
+                                    grid[newPos.x][newPos.y].bag.renewTimer();
+                                }
+                                delete grid[newPos.x][newPos.y].object;
                             }
-                            delete grid[newPos.x][newPos.y].object;
                         }
                     }
                 } else if (object.type === 'resource') {
@@ -1423,6 +1441,12 @@ function gameServer(io) {
         // sent chat message
         socket.on('chat', function onChat(msg) {
             io.emit('msg', player.name + ': ' + msg);
+        });
+
+        // change of aggressive switch
+        socket.on('agro', function onAgro(status) {
+            aggressive = status;
+            emit('msg', 'Aggressive mode ' + (aggressive === true ? 'on.' : 'off.'));
         });
 
         // Remove player from game on disconnect

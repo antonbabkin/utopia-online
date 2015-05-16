@@ -48,5 +48,5 @@ fs.writeFile('players.json', JSON.stringify({}), function (err) {
         console.error('Failed to write empty object to players.json');
         console.log(err);
     }
-    console.log('players.json generated successfully');
+    console.log('players.json erased');
 });
