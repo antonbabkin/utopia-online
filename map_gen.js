@@ -15,7 +15,13 @@ for (let x = 0; x < base.constants.world.width; x += 1) {
     grid[x] = [];
     for (let y = 0; y < base.constants.world.height; y += 1) {
         grid[x][y] = {};
-        if (Math.random() < 0.3) {
+        let rnd = Math.random();
+        if (rnd < 0.1) {
+            grid[x][y].g = base.groundId['Water'];
+            if (Math.random() < 0.3) {
+                grid[x][y].o = base.objectId['Fish'];
+            }
+        } else if (rnd < 0.4) {
             grid[x][y].g = base.groundId['Sand'];
             if (Math.random() < 0.1) {
                 grid[x][y].o = base.objectId['Palm'];

@@ -12,6 +12,14 @@
 window.addEventListener('load', function clientLoader() {
     'use strict';
 
+    var waterMask,
+        self,
+        inventory,
+        equipment,
+        viewport,
+        i, j;
+
+
     var gameKeyboard = false; // switch between game controls and text-field modes
 
     var socket = io();
@@ -39,9 +47,7 @@ window.addEventListener('load', function clientLoader() {
     var utils = utilsClosure();
 
 
-    var self, inventory, equipment;
-    var viewport;
-    var i, j;
+
 
     // -----------------------
     // Append client-specific base objects
@@ -645,7 +651,13 @@ window.addEventListener('load', function clientLoader() {
         });
     });
 
-
+    waterMask = new PIXI.Graphics();
+    waterMask.beginFill();
+    for (j = 0; j < base.constants.viewport.height; j += 1) {
+        waterMask.drawRect(0, j * base.constants.tile.height,
+            base.constants.viewport.width * base.constants.tile.width,
+            Math.floor(base.constants.tile.height / 2));
+    }
 
 
     var sprites = [], // 2-dim grid for PIXI sprites
@@ -683,7 +695,7 @@ window.addEventListener('load', function clientLoader() {
             return;
         }
 
-        var i, j, cell, sprite, texture;
+        var i, j, cell;
         for (i = 0; i < base.constants.viewport.width; i += 1) {
             for (j = 0; j < base.constants.viewport.height; j += 1) {
                 cell = viewport[i][j];
@@ -719,9 +731,18 @@ window.addEventListener('load', function clientLoader() {
                     } else if (cell.char.type === 'mob') {
                         sprites[i][j].char.texture = textures.mobs[cell.char.bid];
                     }
+
+                    // Submerge characters in water by masking their bottoms
+                    if (cell.ground === base.groundId['Water']) {
+                        sprites[i][j].char.mask = waterMask;
+                    } else {
+                        sprites[i][j].char.mask = null;
+                    }
                 } else {
                     sprites[i][j].char.visible = false;
                 }
+
+
 
 
                 // enclosure marks

@@ -107,7 +107,8 @@ function gameServer(io) {
                 }
                 player.updateStats();
                 player.emit('equipment', equipment);
-            } else if ((item.type === 'structure' || item.type === 'facility') && typeof grid[player.x][player.y].object === 'undefined') {
+            } else if ((item.type === 'structure' || item.type === 'facility') && typeof grid[player.x][player.y].object === 'undefined'
+            && grid[player.x][player.y].ground !== base.groundId['Water']) {
                 utils.inventory.removeItem(player, itemBid);
                 player.delayedAction(function () {
                     let objectId = base.objectId[item.name];
@@ -162,6 +163,15 @@ function gameServer(io) {
                                 }
                             });
                         }
+                    }
+
+                    // After digging flood cell with water if there is an adjacent water cell
+                    let around = utils.grid.cellsAround(player);
+                    let noFlood = Object.keys(around).every(function (dir) {
+                        return (around[dir].ground !== base.groundId['Water']);
+                    });
+                    if (noFlood === false) {
+                        cell.ground = base.groundId['Water'];
                     }
                 }
             }

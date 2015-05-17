@@ -2,51 +2,75 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Utopia Online - pixi.js animations</title>
-
+    <title>Utopia Online - pixi.js animations and other cool things</title>
+    <script src="pixi3.min.js"></script>
 </head>
 <body>
-    <script src="../pixi.dev.js"></script>
+
 <script>
 /*
 This is a playground for pixi.js experiments.
-First experiment - frame animations.
+Frame animations.
 */
 
 'use strict';
 
-var stage, renderer, graphics, frames, animation, spr;
+var stage, renderer, graphics, frames, animation, spr, mask;
 
-stage = new PIXI.Stage(0xc8f040);
-renderer = PIXI.autoDetectRenderer(800, 600);
+renderer = PIXI.autoDetectRenderer(800, 600,{backgroundColor : 0xc8f040});
 document.body.appendChild(renderer.view);
 
+// create the root of the scene graph
+stage = new PIXI.Container();
+stage.interactive = true;
+
+// Graphics
 graphics = new PIXI.Graphics();
 graphics.lineStyle(2, 0x0000FF, 1);
 graphics.beginFill(0xFF700B, 1);
-graphics.drawRect(50, 250, 120, 120);
+graphics.drawRect(50, 250, 32, 32);
 stage.addChild(graphics);
 
+
+// MovieClip animation
 frames = [
     PIXI.Texture.fromImage('sphere.png'),
     PIXI.Texture.fromImage('angry_sphere.png')
 ];
 animation = new PIXI.MovieClip(frames);
 animation.x = 100;
-animation.y = 100;
-animation.animationSpeed = 0.1;
+animation.y = 0;
+animation.animationSpeed = 0.05;
 animation.play();
 stage.addChild(animation);
 
 
-spr = new PIXI.Sprite(frames[0]);
-spr.x = 200;
-spr.y = 200;
+
+// Simple static sprite
+spr = new PIXI.Sprite(PIXI.Texture.fromImage('sphere.png'));
+spr.x = 10;
+spr.y = 0;
 stage.addChild(spr);
+
+mask = new PIXI.Graphics();
+mask.beginFill();
+mask.drawRect(0, 0, 320, 20);
+
+animation.mask = mask;
+spr.mask = mask;
+stage.on('click', function () {
+    if (spr.mask === null) {
+        spr.mask = mask;
+        animation.mask = mask;
+    } else {
+        spr.mask = null;
+        animation.mask = null;
+    }
+});
+
 
 
 (function animate() {
-    graphics.x += 0.1;
     renderer.render(stage);
     window.requestAnimationFrame(animate);
 }());
