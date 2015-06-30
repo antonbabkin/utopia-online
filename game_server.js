@@ -116,6 +116,9 @@ function gameServer(io) {
                     if (base.objects[objectId].type === 'private') {
                         privateObjects[player.x + '.' + player.y] = player.name;
                     }
+                    if (objectId === base.objectId['Bed']) {
+                        player.setSpawnPoint({x: player.x, y: player.y});
+                    }
 
                     // Update walls and check for new interiors when building walls
                     if (walls.isWall(grid[player.x][player.y])) {
@@ -266,7 +269,7 @@ function gameServer(io) {
             // 0.5 * (100 - Player skill level)%, if fail
             let stats = player.getStats();
             let success = (Math.random() < 0.01 * (stats[req.skill] - req.min));
-            let increaseP = 1 - 0.01 * stats.base[req.skill];
+            let increaseP = 1 - 0.01 * stats.base[req.skill]; // todo: check if this is working correctly, seems like skill is not trained when wearing +100 item
             increaseP *= (success ? 1 : 0.5);
             if (Math.random() < increaseP) {
                 utils.skill.increase(player, req.skill);
@@ -898,6 +901,9 @@ function gameServer(io) {
                 // choose random direction
                 let newPos = moves[names[Math.floor(Math.random() * count)]];
                 moveOnGrid(pub, newPos);
+                return base.grounds[grid[newPos.x][newPos.y].ground].mod;
+            } else {
+                return 1;
             }
         }
 
@@ -922,11 +928,15 @@ function gameServer(io) {
 
             if (!stayOnTile) {
                 moveOnGrid(pub, newPos);
+                return base.grounds[grid[newPos.x][newPos.y].ground].mod;
+            } else {
+                return 1;
             }
         }
 
         // choose and perform an action: move or attack
         function action() {
+            let delayMod = 1; // default delay: after attacks
             if (prv.aggressive) {
                 // attack if there is a player nearby
                 let around = utils.coordsAround(pub);
@@ -947,19 +957,20 @@ function gameServer(io) {
                         let player = players[pid];
                         let distance = utils.vector(pub, player).normSum();
                         if (distance <= prv.radius) {
-                            moveTowards(player);
+                            delayMod = moveTowards(player);
                             return false; // exit .every loop
                         }
                         return true; // continue .every loop
                     });
                     if (noPlayerInRadius) {
-                        moveRandom();
+                        delayMod =  moveRandom();
                     }
                 }
 
             } else { // non-aggressive mob
-                moveRandom();
+                delayMod =  moveRandom();
             }
+            return delayMod;
         }
 
         function die() {
@@ -985,8 +996,8 @@ function gameServer(io) {
         // start action loop when mob is created
         let actionTimer = setTimeout(actionLoop, prv.actionDelay);
         function actionLoop() {
-            action();
-            actionTimer = setTimeout(actionLoop, prv.actionDelay);
+            let delayMod = action();
+            actionTimer = setTimeout(actionLoop, prv.actionDelay * delayMod);
         }
 
         // interrupt action loop and delete mob object from global lists
@@ -1040,7 +1051,6 @@ function gameServer(io) {
                 lifetimeTimer = setTimeout(lifetime, base.constants.bagLifetime);
             } else {
                 delete grid[bag.x][bag.y].bag;
-                console.log('bag dies at ', bag.x, bag.y); // debug quick death of bag when chest is destroyed
             }
         }
 
@@ -1078,6 +1088,7 @@ function gameServer(io) {
             inventory,
             equipment,
             stats,
+            spawnPoint,
             aggressive,
             actionDelay,
             onDelay,
@@ -1149,12 +1160,13 @@ function gameServer(io) {
             updateInsideStatus();
         }
 
-        function delay() {
+        function delay(mod) {
             // put player on delay
+            mod = mod || 1;
             onDelay = true;
             delayTimer = setTimeout(function () {
                 onDelay = false;
-            }, actionDelay);
+            }, actionDelay * mod);
         }
 
         function delayedAction(callback) {
@@ -1170,7 +1182,7 @@ function gameServer(io) {
 
         function die() {
             // Lose all inventory items and equipment from a randomly chosen slot.
-            // Player is then taken to a random spot in the map.
+            // Player is then taken to a random spot in the map or at spawn point if he has a bed.
             let loot = inventory.concat(base.itemId["Player's ear"]);
             inventory = [];
             let loseSlot = base.constants.eqSlots[Math.floor(Math.random() * base.constants.eqSlots.length)];
@@ -1186,7 +1198,7 @@ function gameServer(io) {
 
             updateStats();
             stats.hp = stats.maxHp;
-            moveOnGrid(player, utils.grid.getRandomEmptyCell());
+            moveOnGrid(player, spawnPoint === null ? utils.grid.getRandomEmptyCell() : spawnPoint);
             updateViewport();
             emit('inventory', inventory);
             emit('equipment', equipment);
@@ -1211,6 +1223,23 @@ function gameServer(io) {
             if (player.inside !== inside) {
                 player.inside = inside;
                 updateStats();
+            }
+        }
+
+        function setSpawnPoint(xy) {
+            if (typeof xy === 'undefined') {
+                // old bed destroyed
+                spawnPoint = null;
+                emit('msg', 'Spawn point erased!');
+            } else {
+                // setting new spawn point
+                if (spawnPoint !== null) {
+                    // erase ownership of the previous bed
+                    delete privateObjects[spawnPoint.x + '.' + spawnPoint.y];
+                    emit('msg', 'Spawn point erased.');
+                }
+                spawnPoint = xy;
+                emit('msg', 'Spawn point set.');
             }
         }
 
@@ -1247,6 +1276,7 @@ function gameServer(io) {
                 }
                 // total stats are added to this object by updateStats()
             };
+            spawnPoint = null;
         } else {
             // load player from storage
             let p = playersData[name];
@@ -1258,6 +1288,11 @@ function gameServer(io) {
             inventory = p.inventory;
             equipment = p.equipment;
             stats = p.stats;
+            spawnPoint = p.spawnPoint;
+            if (spawnPoint !== null && privateObjects[spawnPoint.x + '.' + spawnPoint.y] !== name) {
+                // bed was destroyed while player was offline
+                setSpawnPoint();
+            }
         }
 
         aggressive = false;
@@ -1273,16 +1308,17 @@ function gameServer(io) {
         player.delayedAction = delayedAction;
         player.die = die;
         player.destroy = destroy;
+        player.setSpawnPoint = setSpawnPoint;
 
         addToGrid(player); // add new player object to global lists
 
-        actionDelay = base.constants.actionDelay / stats.speed;
-        onDelay = false;
         emit('login', {success: true, name: player.name});
         emit('inventory', inventory);
         emit('equipment', equipment);
         updateViewport(); // will also call updateInsideStatus(), create .inHome property, updateStats() and emit 'stats'
         emitViewportLoop(); // start update loop
+        actionDelay = base.constants.actionDelay / stats.speed;
+        onDelay = false;
 
         console.log('Player connected: ' + player.name);
         console.log('Current number of players: ' + Object.keys(players).length);
@@ -1318,8 +1354,21 @@ function gameServer(io) {
                         delete grid[newPos.x][newPos.y].object;
                     });
                 }
+                if (object.name === 'Bed') {
+                    removeBed(player.id);
+                }
             }
 
+            function removeBed(pid) {
+                delete privateObjects[newPos.x + '.' + newPos.y];
+                players[pid].setSpawnPoint();
+            }
+
+            function walk() {
+                moveOnGrid(player, newPos);
+                updateViewport();
+                delay(base.grounds[grid[newPos.x][newPos.y].ground].mod);
+            }
 
             switch (dir) {
             case 'e':
@@ -1370,9 +1419,7 @@ function gameServer(io) {
                         if (aggressive === true) {
                             pickupObject(object);
                         } else {
-                            moveOnGrid(player, newPos);
-                            updateViewport();
-                            delay();
+                            walk();
                         }
                     } else {
                         if (aggressive === true) {
@@ -1382,6 +1429,20 @@ function gameServer(io) {
                                 checkWallBreak();
                                 if (object.name === 'Chest' && typeof grid[newPos.x][newPos.y].bag !== 'undefined') {
                                     grid[newPos.x][newPos.y].bag.renewTimer();
+                                }
+                                if (object.name === 'Bed') {
+                                    let owner = privateObjects[newPos.x + '.' + newPos.y];
+                                    if (typeof owner !== 'undefined') {
+                                        // find pid of the owner
+                                        Object.keys(players).every(function (pid) {
+                                            if (players[pid].name === owner) {
+                                                removeBed(pid);
+                                                return false; // break .every loop
+                                            } else {
+                                                return true; // continue .every loop
+                                            }
+                                        });
+                                    }
                                 }
                                 delete grid[newPos.x][newPos.y].object;
                             }
@@ -1410,9 +1471,7 @@ function gameServer(io) {
                 }
             } else {
                 // walk if destination cell is empty
-                moveOnGrid(player, newPos);
-                updateViewport();
-                delay();
+                walk();
             }
 
         });
@@ -1468,7 +1527,8 @@ function gameServer(io) {
                 tint: player.tint,
                 inventory: inventory,
                 equipment: equipment,
-                stats: stats
+                stats: stats,
+                spawnPoint: spawnPoint
             };
 
             destroy();

@@ -105,7 +105,7 @@ db.constants = {
     bagLifetime: 60 * 1000,
     playerUpdateTime: 125,
     serverSaveTime: 50 * 60 * 1000,
-    environmentUpdateTime: 5 * 60 * 1000,
+    environmentUpdateTime: 1 * 60 * 1000,
     maxInventory: 20,
     eqSlots: [
         'torso',

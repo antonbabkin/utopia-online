@@ -1,7 +1,7 @@
-name,image,grow.name,grow.p,change.name,change.p,type,level,output
-Sand,sand,Palm,0.02,,,resource,10,Sand
-Grass,grass,Tree,0.02,,,resource,0,Dirt
-Dirt,dirt,,,Grass,0.5,resource,0,Dirt
-Wooden floor,wooden_floor,,,Dirt,0.02,cover,,
-Stone floor,stone_floor,,,Dirt,0.01,cover,,
-Water,water,Fish,0.1,,,resource,20,Sand
+name,image,grow.name,grow.p,change.name,change.p,type,level,output,mod
+Sand,sand,Palm,0.02,,,resource,10,Sand,2
+Grass,grass,Tree,0.02,,,resource,0,Dirt,1.5
+Dirt,dirt,,,Grass,0.5,resource,0,Dirt,1.5
+Wooden floor,wooden_floor,,,Dirt,0.02,cover,,,1
+Stone floor,stone_floor,,,Dirt,0.01,cover,,,1
+Water,water,Fish,0.1,,,resource,20,Sand,3

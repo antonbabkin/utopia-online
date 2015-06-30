@@ -11,3 +11,4 @@ Workbench,workbench,facility,,,,,,0.02
 Wooden door,wooden_door,private,0.95,,,,,
 Chest,chest,private,0.95,,,,,
 Fish,fish,resource,0.6,Fish,gathering,0,,0.1
+Bed,bed,private,0.8,,,,,

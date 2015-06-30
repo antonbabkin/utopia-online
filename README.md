@@ -20,9 +20,9 @@ Things to add, modify and expand:
 - Some usage for PvP trophies such as ears.
 - Equipment on avatar sprite.
 - Simple animation of mobs and players, maybe some objects and grounds (water?).
-- Movement speed depends on ground type.
+- *Movement speed depends on ground type.*
 - *Add water: slow to move over (maybe swimming skill?), spawns fish, can be replaced by ground or expanded by digging shores.*
-- Smoother interface, "craft all", hot buttons for items and recipes.
+- Smoother interface, "craft all", hot buttons for items and recipes. Click on map to see characters and objects.
 - Touch-screen support (if that is not too difficult to design and implement).
 - Some simple terrain-generation algorithm (rivers, plains, forests, deserts, mountains).
 - Towers to guard buildings from aggressive players (if that is not too difficult).
@@ -35,5 +35,6 @@ Things to add, modify and expand:
 After all above is finished, do code refactoring and minor optimization:
 - Separate code visibility to client and server (object properties etc).
 - Deployment: minification, obfuscation, "make-file".
+- Pack images into an atlas.
 - Make a clear, neat code that is easy to read, understand, maintain and extend.
 - Try to get it work smoothly with 1000x1000 map, 1000 mobs and 10 players.
